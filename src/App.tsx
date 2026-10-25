@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
 import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Compass, Download, FolderOpen, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
 import { createConversation, listConversations, readConversation, saveConversation } from './api'
 import { cancelUpdate, checkForUpdate, chooseDataDirectory, getAppVersion, getBackendConnection, installUpdate, onBeforeClose, type UpdateCheck } from './desktop'
@@ -9,20 +10,23 @@ const PHOTO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Sunset_o
 const PHOTO_TWO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/West_lake_twilight.jpg/500px-West_lake_twilight.jpg'
 type Panel = 'history' | 'settings' | 'photos' | 'favorites' | 'edit' | 'new' | 'detail' | null
 const describeError = (error: unknown) => error instanceof Error ? error.message : '操作没有完成，请重试。'
+let startupUpdateCheck: Promise<UpdateCheck> | null = null
 
 function Photo({ src = PHOTO, className = '', alt = '杭州西湖风景参考照片' }: { src?: string; className?: string; alt?: string }) {
   const [failed, setFailed] = useState(false)
-  return <div className={`photo ${className}`}>
-    {!failed && <img src={src} alt={alt} referrerPolicy="no-referrer" onError={() => setFailed(true)} />}
+  const [loaded, setLoaded] = useState(false)
+  return <div className={`photo ${loaded ? 'photo--loaded' : ''} ${className}`} aria-busy={!loaded && !failed}>
+    {!failed && <img src={src} alt={alt} referrerPolicy="no-referrer" onLoad={event => { void event.currentTarget.decode().then(() => setLoaded(true)).catch(() => setFailed(true)) }} onError={() => setFailed(true)} />}
+    {!loaded && !failed && <div className="photo-loading"><ImageIcon size={20} /><span>照片加载中</span></div>}
     {failed && <div className="photo-fallback"><MapPin size={24} /><span>西湖 · 山水之间</span></div>}
   </div>
 }
 
-function Dialog({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
+function Dialog({ title, children, onClose, wide = false, busy = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; busy?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => { if (dialog?.open) dialog.close() } }, [])
-  return <dialog ref={ref} className={`dialog ${wide ? 'dialog--wide' : ''}`} onCancel={event => { event.preventDefault(); onClose() }} onClick={event => { if (event.target === event.currentTarget) onClose() }}>
-    <div className="dialog-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label="关闭窗口"><X size={21} /></button></div>
+  return <dialog ref={ref} className={`dialog ${wide ? 'dialog--wide' : ''}`} onCancel={event => { event.preventDefault(); if (!busy) onClose() }} onClick={event => { if (!busy && event.target === event.currentTarget) onClose() }}>
+    <div className="dialog-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} disabled={busy} aria-label="关闭窗口"><X size={21} /></button></div>
     {children}
   </dialog>
 }
@@ -40,6 +44,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [applying, setApplying] = useState(false)
   const [connectionError, setConnectionError] = useState('')
   const [dataDir, setDataDir] = useState('连接后显示本地数据目录')
   const [version, setVersion] = useState('0.1.0')
@@ -110,13 +115,20 @@ export default function App() {
   }
 
   useEffect(() => { void connect(); void getAppVersion().then(setVersion).catch(() => undefined) }, [])
+  useEffect(() => {
+    if (!isTauri()) return
+    let disposed = false
+    startupUpdateCheck ??= checkForUpdate()
+    void startupUpdateCheck.then(result => { if (!disposed) setUpdate(result) }).catch(() => undefined)
+    return () => { disposed = true }
+  }, [])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 6500); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [workspace.messages.length, chatOpen])
   useEffect(() => {
-    if (!ready || loading || !dirty) return
+    if (!ready || loading || !dirty || applying) return
     const timer = window.setTimeout(() => { void persist(workspace).catch(error => notify(describeError(error), true)) }, 900)
     return () => window.clearTimeout(timer)
-  }, [workspace, ready, loading, dirty])
+  }, [workspace, ready, loading, dirty, applying])
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => { if (dirty || saving) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', handler)
@@ -154,7 +166,9 @@ export default function App() {
       notify('请填写活动名称和有效的时间（例如 09:30）。', true); return
     }
     const next = { ...dataRef.current, days: structuredClone(draft), draft: null }
+    setApplying(true)
     try { await persist(next); change(next, false); setPanel(null); notify('修改已应用，正式行程已保存到本机。') } catch (error) { notify(describeError(error), true) }
+    finally { setApplying(false) }
   }
   async function openHistory(id: string) {
     try {
@@ -213,7 +227,7 @@ export default function App() {
         <button className={`nav-item ${panel === 'history' ? 'active' : ''}`} onClick={() => setPanel('history')}><History size={25} /><span>历史旅行</span></button>
         <button className={`nav-item ${panel === 'favorites' ? 'active' : ''}`} onClick={() => setPanel('favorites')}><Heart size={25} /><span>收藏</span></button>
       </nav>
-      <div className="sidebar-bottom"><button className="nav-item settings-nav" onClick={() => setPanel('settings')} aria-label="设置与更新"><Settings size={24} /><span>设置</span></button><div className="travel-signature"><span className={`connection-dot ${ready ? 'online' : ''}`} /><span>好旅行<br />从这里开始</span></div></div>
+      <div className="sidebar-bottom">{update?.version && <button className="update-notice" aria-label={`发现新版本 v${update.version}，查看更新`} onClick={() => setPanel('settings')}><Download size={18} /><span>更新可用</span></button>}<button className="nav-item settings-nav" onClick={() => setPanel('settings')} aria-label="设置与更新"><Settings size={24} /><span>设置</span></button><div className="travel-signature"><span className={`connection-dot ${ready ? 'online' : ''}`} /><span>好旅行<br />从这里开始</span></div></div>
     </aside>
     <div className="main-shell">
       <header className="topbar">
@@ -246,7 +260,22 @@ export default function App() {
     {panel === 'settings' && <Dialog title="设置与更新" onClose={() => { if (!installing) setPanel(null) }}><div className="settings-content"><section><h3>本地数据</h3><p>会话和行程以 JSON 文件保存在本机，应用升级不会替换这些文件。</p><div className="path-field"><FolderOpen size={17} /><span>{dataDir}</span></div><div className="button-row"><button className="secondary-button" onClick={() => void selectDataDirectory()} disabled={!ready || saving}>选择数据目录</button><button className="text-button" onClick={() => void connect()} disabled={loading}>{loading ? '连接中…' : '重新连接服务'}</button></div>{connectionError && <p className="inline-error">{connectionError}</p>}</section><section><h3>客户端更新 <span className="version">v{version}</span></h3><p>发现新版本后由你确认下载，校验通过并保存当前内容后重启更新。</p><button className="secondary-button" onClick={() => void checkUpdate()} disabled={checking || installing}>{checking ? <LoaderCircle size={16} className="spin" /> : <RotateCcw size={16} />}{checking ? '正在检查' : '检查更新'}</button>{update && <div className="update-result">{!update.configured ? <p>更新源尚未配置。发布仓库与签名配置完成后即可检查新版本。</p> : update.version ? <><strong>发现新版本 v{update.version}</strong><p className="release-notes">{update.body || '此版本没有附加更新说明。'}</p><button className="primary-button" onClick={() => void runUpdate()} disabled={installing || !ready}>{installing ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}{installing ? progress === null ? '正在下载并校验…' : `下载中 ${Math.round(progress)}%` : '保存并更新'}</button>{installing && <button className="text-button" onClick={() => void cancelUpdate().catch(error => notify(describeError(error), true))}>取消下载</button>}</> : <p>当前已是最新版本。</p>}</div>}</section><section><h3>模型与工具</h3><p>当前为桌面基础版本。规划 Agent、执行 Agent 和远程 MCP 尚未接入，示例不会触发模型费用。</p></section><details className="attributions"><summary>照片与界面说明</summary><p>西湖照片来自 Wikimedia Commons：DXR（桥畔日落）与 Tyler Valentine（西湖暮色），CC BY-SA 4.0。以裁切方式展示，不能视为特定活动的现场照片。</p><a href="https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg" target="_blank" rel="noreferrer">桥畔日落来源</a><a href="https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg" target="_blank" rel="noreferrer">西湖暮色来源</a><a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a><p>界面遵循用户指定的 SuperTravel-Agent README 概念预览；底图为本项目绘制的示意地图，不用于导航。</p></details></div></Dialog>}
     {panel === 'history' && <Dialog title="历史旅行" onClose={() => setPanel(null)}><div className="history-list">{history.length === 0 ? <div className="empty-state"><History size={34} /><h3>旅行，从这里留下足迹</h3><p>保存第一份行程后，下次打开就能继续。</p><button className="primary-button" disabled={!ready || saving} onClick={() => void persist().then(() => notify('第一份行程已保存。')).catch(error => notify(describeError(error), true))}>保存当前行程</button></div> : history.map(item => <button className="history-item" key={item.id} disabled={saving} onClick={() => void openHistory(item.id)}><span className="history-icon"><Map size={22} /></span><span><strong>{item.title}</strong><small>{new Date(item.updated_at).toLocaleString('zh-CN')} · 本地会话</small></span>{current?.id === item.id ? <span className="current-label">当前</span> : <ChevronRight size={18} />}</button>)}</div></Dialog>}
     {panel === 'new' && <Dialog title="开始一段新旅程" onClose={() => setPanel(null)}><div className="new-trip-content"><p>先给这段旅程取个名字。</p><label className="field-label">会话名称<input autoFocus maxLength={80} value={newTitle} onChange={event => setNewTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void newConversation() }} /></label><p className="muted-note">当前创建本地示例会话，沿用杭州三日展示数据；真实需求规划将在后续接入。</p><button className="primary-button" disabled={!ready || !newTitle.trim() || saving} onClick={() => void newConversation()}><Plus size={17} />创建本地会话</button></div></Dialog>}
-    {panel === 'edit' && <Dialog title="编辑当天行程" onClose={() => setPanel(null)} wide><div className="edit-content"><div className="edit-notice"><Pencil size={17} /><span>正在编辑草稿。点击“应用修改”后才会替换已保存行程。</span></div><div className="editor-day-tabs">{days.map(item => <button key={item.day} className={day.day === item.day ? 'selected' : ''} onClick={() => selectDay(item.day)}>第 {item.day} 天</button>)}</div>{day.activities.map((activity, index) => <div className="editor-activity" key={activity.id}><span className="editor-number">{index + 1}</span><div className="editor-fields"><div className="editor-inline"><label className="field-label">时间<input type="time" value={activity.time} onChange={event => editActivity(activity.id, { time: event.target.value })} /></label><label className="field-label name-field">地点<input maxLength={60} value={activity.title} onChange={event => editActivity(activity.id, { title: event.target.value })} /></label></div><label className="field-label">备注<textarea rows={2} maxLength={500} value={activity.description} onChange={event => editActivity(activity.id, { description: event.target.value })} /></label></div><div className="reorder-buttons"><button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div></div>)}<p className="muted-note">本阶段可编辑本地示例；改变地点后不会自动查询新的真实坐标或路线。</p><div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving} onClick={() => void applyDraft()}><Check size={17} />应用修改</button></div></div></Dialog>}
+    {panel === 'edit' && <Dialog title="编辑当天行程" onClose={() => setPanel(null)} wide busy={applying}><div className="edit-content">
+      <div className="edit-notice"><Pencil size={17} /><span>正在编辑草稿。点击“应用修改”后才会替换已保存行程。</span></div>
+      <fieldset className="editor-form" disabled={applying} aria-busy={applying}>
+        <div className="editor-day-tabs">{days.map(item => <button key={item.day} className={day.day === item.day ? 'selected' : ''} onClick={() => selectDay(item.day)}>第 {item.day} 天</button>)}</div>
+        {day.activities.map((activity, index) => <div className="editor-activity" key={activity.id}>
+          <span className="editor-number">{index + 1}</span>
+          <div className="editor-fields">
+            <div className="editor-inline"><label className="field-label">时间<input type="time" value={activity.time} onChange={event => editActivity(activity.id, { time: event.target.value })} /></label><label className="field-label name-field">地点<input maxLength={60} value={activity.title} onChange={event => editActivity(activity.id, { title: event.target.value })} /></label></div>
+            <div className="field-label"><label htmlFor={`notes-${activity.id}`}>备注</label><textarea id={`notes-${activity.id}`} rows={2} maxLength={500} value={activity.description} onChange={event => editActivity(activity.id, { description: event.target.value })} /></div>
+          </div>
+          <div className="reorder-buttons"><button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div>
+        </div>)}
+        <p className="muted-note">本阶段可编辑本地示例；改变地点后不会自动查询新的真实坐标或路线。</p>
+        <div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving} onClick={() => void applyDraft()}><Check size={17} />{applying ? '正在应用…' : '应用修改'}</button></div>
+      </fieldset>
+    </div></Dialog>}
     {panel === 'photos' && <Dialog title="旅行中的片刻" onClose={() => setPanel(null)} wide><div className="photo-gallery"><figure><Photo /><figcaption>西湖桥畔的日落 · DXR</figcaption></figure><figure><Photo src={PHOTO_TWO} /><figcaption>西湖暮色 · Tyler Valentine</figcaption></figure><p>风景参考照片，不是当前示例路线的实时实拍。授权及来源见“设置与更新”。</p></div></Dialog>}
     {panel === 'favorites' && <Dialog title="收藏的地点" onClose={() => setPanel(null)}><div className="favorites-list">{workspace.favorites.length === 0 ? <div className="empty-state"><Heart size={34} /><h3>把心动的地方留下</h3><p>点击地点卡片上的爱心，收藏你想去的地方。</p></div> : days.flatMap(item => item.activities).filter(activity => workspace.favorites.includes(activity.id)).map(activity => <button className="favorite-item" key={activity.id} onClick={() => { setSelected(activity.id); setPanel('detail') }}><MapPin size={21} /><span><strong>{activity.title}</strong><small>{activity.description}</small></span><ChevronRight size={17} /></button>)}</div></Dialog>}
     {panel === 'detail' && selectedActivity && <Dialog title={selectedActivity.title} onClose={() => setPanel(null)}><div className="detail-content"><Photo /><p>{selectedActivity.description}</p><dl><div><dt>建议时间</dt><dd>{selectedActivity.time}</dd></div><div><dt>预计停留</dt><dd>{selectedActivity.duration}</dd></div><div><dt>信息状态</dt><dd>示例 · 实际开放与预约待确认</dd></div></dl><p className="muted-note">照片为西湖风景参考，地图位置仅供界面演示，不作为导航或预订依据。</p><button className="secondary-button" onClick={() => favorite(selectedActivity.id)}><Heart size={17} />{workspace.favorites.includes(selectedActivity.id) ? '取消收藏' : '收藏这个地方'}</button></div></Dialog>}

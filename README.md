@@ -41,10 +41,11 @@ npm run desktop:dev
 npm run build
 backend/.venv/Scripts/python -m pytest backend/tests -q
 backend/.venv/Scripts/python scripts/test-platform.py
+npm run test:ui
 npm run desktop:build
 ```
 
-Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
+界面测试需要先运行 `npm run dev`；本机默认使用已安装的 Edge。Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
 
 ## 更新与发布
 

@@ -7,10 +7,11 @@
 | 项目 | 当前状态 | 证据 |
 | --- | --- | --- |
 | 独立工程与旧项目隔离 | 已建立 | 新目录 `D:\vscode\project\SuperTravelDesktop`；独立仓库 `IT-coder-Yy/SuperTravelAgent` |
-| Python JSON/API 测试 | 验证中 | 以本次 pytest 最终结果为准 |
-| 前端类型检查与构建 | 待验证 | `npm run build` |
-| 浏览器界面与保存恢复 | 待验证 | 本地开发服务器与实际页面操作 |
-| 平台脚本测试 | 待验证 | `scripts/test-platform.py` |
+| Python JSON/API 测试 | 25 项通过 | 独立 Python 3.13 虚拟环境，验证鉴权、原子保存、冲突及进程退出 |
+| 前端类型检查与构建 | 通过 | `npm run build` |
+| 浏览器界面与保存恢复 | 通过：Edge，2 passed（7.5s） | 独立会话、草稿刷新恢复/放弃/应用、保存中编辑锁定、聊天保存恢复、更新未配置状态、1024px 无横向溢出；1440×960 与 1024×768 截图均在照片完整解码后生成 |
+| 平台脚本测试 | 首轮 7 项通过 | `scripts/test-platform.py`；独立测试签名另验证版本不匹配拒绝 |
+| Windows 冻结 Python 服务 | 通过 | PyInstaller 6.20.0；清除 Python 环境变量且 `python` 命令不可解析后，独立 EXE 通过鉴权、JSON 保存读取、409 及 EOF 退出 |
 | Windows x64 包 | 待验证 | GitHub Actions |
 | macOS arm64/x64 包 | 待验证 | GitHub Actions |
 | Linux x64 包 | 待验证 | GitHub Actions |

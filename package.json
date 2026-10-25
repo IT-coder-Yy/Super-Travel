@@ -12,7 +12,8 @@
     "desktop:dev": "node scripts/desktop-build.mjs --dev",
     "desktop:build": "node scripts/desktop-build.mjs",
     "test:platform": "python scripts/test-platform.py",
-    "test:backend": "python -m pytest backend/tests -q"
+    "test:backend": "python -m pytest backend/tests -q",
+    "test:ui": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",

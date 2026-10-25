@@ -1,6 +1,8 @@
 # 更新演练
 
-当前实现：Tauri 官方 updater 校验包签名和签名绑定的版本；默认尝试 GH-Proxy 下载公开 GitHub Release 资产，失败回官方地址。更新清单从构建时配置的固定地址读取。未配置地址／公钥的构建显示“未配置更新”，不会宣称已是最新版。
+当前实现：Tauri 官方 updater 校验包签名和签名绑定的版本；默认尝试 GH-Proxy 下载公开 GitHub Release 资产，失败回官方地址。更新清单先从构建时配置的固定 GitHub `releases/latest/download/latest.json` 地址读取，网络失败或 404/500 时尝试同一文件的 HTTPS 镜像。镜像不接收本地令牌、模型 Key、账号凭据或带查询参数的地址。未配置地址／公钥的构建显示“未配置更新”，不会宣称已是最新版。
+
+`STA_UPDATE_MIRROR` 可在构建时替换免费镜像前缀，默认 `https://gh-proxy.com/`，设为空字符串可停用。无论清单来自哪个源，安装包均用客户端内置的同一公钥验证签名及绑定版本；清单本身没有独立签名。正式构建的检查与下载请求只允许 HTTPS（包括重定向）。镜像仍可能不可用或缓存旧清单，因此官方源优先，且不把镜像清单当作已验证的软件。原生 updater 在 204 或有效但无新版本的清单时正常结束；HTTP 200 却不是 JSON 时会直接报错，不把错误当作“最新”。这些行为已按锁定的 [tauri-plugin-updater 2.14.0 源码](https://docs.rs/tauri-plugin-updater/2.14.0/src/tauri_plugin_updater/updater.rs.html) 核对。
 
 ## 正式 GitHub Release 路径
 

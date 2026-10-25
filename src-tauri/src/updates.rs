@@ -109,8 +109,14 @@ pub async fn check_update(
         });
     }
     let exit_app = app.clone();
+    let allow_local_http = app.config().plugins.0["updater"]
+        .get("dangerousInsecureTransportProtocol")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
     let update = app
         .updater_builder()
+        .clear_headers()
+        .configure_client(move |client| client.https_only(!allow_local_http))
         .timeout(Duration::from_secs(30))
         .on_before_exit(move || exit_app.state::<Backend>().stop())
         .build()
@@ -224,6 +230,16 @@ pub async fn install_update(app: AppHandle, state: State<'_, Updates>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unsigned_build_has_valid_but_disabled_updater_config() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let updater: tauri_plugin_updater::Config =
+            serde_json::from_value(config["plugins"]["updater"].clone()).unwrap();
+        assert!(updater.pubkey.is_empty());
+        assert!(updater.endpoints.is_empty());
+    }
+
     #[test]
     fn mirror_only_accepts_public_github_release_assets() {
         assert!(mirror_url(

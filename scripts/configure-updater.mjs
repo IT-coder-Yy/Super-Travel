@@ -4,6 +4,18 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+function manifestEndpoints(url, env) {
+  const endpoints = [url.href];
+  // Only public GitHub metadata may leave the canonical host; query strings may contain credentials.
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.search || url.hash || !/^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/releases\/latest\/download\/latest\.json$/.test(url.pathname)) return endpoints;
+  const prefix = (env.STA_UPDATE_MIRROR ?? 'https://gh-proxy.com/').trim();
+  if (!prefix) return endpoints;
+  const mirror = new URL(prefix);
+  if (mirror.protocol !== 'https:' || mirror.username || mirror.password || mirror.search || mirror.hash) throw new Error('更新镜像必须是无凭据、无查询参数的 HTTPS 地址。');
+  endpoints.push(`${mirror.href.replace(/\/$/, '')}/${url.href}`);
+  return endpoints;
+}
+
 export function updaterConfig(env) {
   const endpoint = (env.STA_UPDATE_ENDPOINT || '').trim();
   const pubkey = (env.STA_UPDATER_PUBLIC_KEY || '').trim();
@@ -17,7 +29,7 @@ export function updaterConfig(env) {
   if (!publicText.startsWith('untrusted comment:') || !publicText.split(/\r?\n/)[1]) throw new Error('更新公钥不是 Tauri signer 生成的公钥。');
   return {
     bundle: { createUpdaterArtifacts: true },
-    plugins: { updater: { pubkey, endpoints: [endpoint], requireSignedVersion: true, allowDowngrades: false, dangerousInsecureTransportProtocol: local, windows: { installMode: 'passive' } } },
+    plugins: { updater: { pubkey, endpoints: manifestEndpoints(url, env), requireSignedVersion: true, allowDowngrades: false, dangerousInsecureTransportProtocol: local, windows: { installMode: 'passive' } } },
   };
 }
 
