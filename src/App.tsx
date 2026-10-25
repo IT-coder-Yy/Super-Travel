@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Compass, Download, FolderOpen, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Download, FolderOpen, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
 import { createConversation, listConversations, readConversation, saveConversation } from './api'
 import { cancelUpdate, checkForUpdate, chooseDataDirectory, getAppVersion, getBackendConnection, installUpdate, onBeforeClose, type UpdateCheck, type UpdatePhase } from './desktop'
 import { MapCanvas } from './components/MapCanvas'
@@ -220,7 +220,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar" aria-label="主导航">
-      <button className="brand-mark" aria-label="返回地图首页" onClick={() => { setPanel(null); setZoom(1) }}><Compass size={38} strokeWidth={1.3} /></button>
+      <button className="brand-mark" aria-label="返回地图首页" onClick={() => { setPanel(null); setZoom(1) }}><img src="/app-icon.svg" width={38} height={38} alt="" /></button>
       <nav>
         <button className="nav-item" onClick={() => setPanel('new')}><Navigation size={25} /><span>旅程</span></button>
         <button className={`nav-item ${panel === null ? 'active' : ''}`} onClick={() => setPanel(null)} aria-current={panel === null ? 'page' : undefined}><Map size={25} /><span>地图</span></button>
