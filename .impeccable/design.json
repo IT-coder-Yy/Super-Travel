@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "C1 Glacier White",
+  "mode": "operate",
+  "reference": "https://github.com/IT-coder-Yy/SuperTravel-Agent#preview",
+  "tokens": {
+    "color": {"ink": "#13264e", "muted": "#607496", "accent": "#1457d9", "background": "#f3f8fc", "surface": "#ffffff", "border": "#e0e9f3", "selection": "#e8f1ff", "park": "#cae5d4", "water": "#9dd4e7"},
+    "radius": {"control": "8px", "panel": "16px"},
+    "size": {"sidebar": "84px", "header": "72px", "itinerary": "354px", "placeCard": "246px"},
+    "shadow": {"panel": "0 5px 24px rgba(32,81,105,.1)"}
+  },
+  "implementation": "src/styles.css",
+  "verification": "需由实际浏览器与桌面窗口验证"
+}

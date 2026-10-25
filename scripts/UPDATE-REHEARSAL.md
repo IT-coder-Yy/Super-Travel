@@ -1,0 +1,29 @@
+# 更新演练
+
+当前实现：Tauri 官方 updater 校验包签名和签名绑定的版本；默认尝试 GH-Proxy 下载公开 GitHub Release 资产，失败回官方地址。更新清单从构建时配置的固定地址读取。未配置地址／公钥的构建显示“未配置更新”，不会宣称已是最新版。
+
+## 正式 GitHub Release 路径
+
+1. GitHub 仓库配置 secret `TAURI_SIGNING_PRIVATE_KEY`，可选 secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`；配置 vars `STA_UPDATER_PUBLIC_KEY` 和 `STA_UPDATE_ENDPOINT=https://github.com/<owner>/<repo>/releases/latest/download/latest.json`。私钥只进入受信构建任务，不提交仓库、日志或安装包。
+2. `node scripts/set-version.mjs 0.1.0`，提交全部版本文件，再推送 `v0.1.0` tag。CI 在四个原生 runner 打包并测试 Python sidecar。
+3. 全部平台成功后才合并清单、创建草稿 Release、上传全部资产，再发布。普通 main/PR 构建只保留 Actions Artifacts；无签名配置时生成不带更新能力的测试包。
+4. 安装 0.1.0，创建并保存会话；按相同步骤发布 0.1.1。应用检查到更新后由用户启动下载与安装，验证重启后版本、会话内容和数据目录。
+5. 分别记录 Windows、macOS Apple Silicon/Intel、Linux 的安装与实际更新结果。CI 构建成功或 sidecar 测试成功不等于原生更新已实测。macOS ad-hoc 签名不等于 Apple 公证，首次启动和升级后启动需要在目标机器核验。
+
+## 本机离线故障演练
+
+只允许固定 `localhost`／`127.0.0.1` 地址，并显式设置 `STA_ALLOW_LOCAL_UPDATES=1`。正式发布绝不设置此变量。
+
+1. 用同一测试签名密钥构建 0.1.0 和 0.1.1，均设置 `STA_UPDATE_ENDPOINT=http://127.0.0.1:17891/latest.json`、`STA_UPDATER_PUBLIC_KEY` 与 `TAURI_SIGNING_PRIVATE_KEY`；先保存并安装 0.1.0。测试私钥放 `.local/`，不使用或打印生产私钥。
+2. 用 `prepare-release.py --target <target-triple> --bundle-dir src-tauri/target/<target-triple>/release/bundle --base-url http://127.0.0.1:17891 --output .local/signed-next` 收集 0.1.1，输入必须包含原生更新包与对应 `.sig`。
+3. `python scripts/make-update-fixture.py .local/signed-next/platform.json --output .local/update-fixture`，再运行 `python scripts/serve-updates.py .local/update-fixture`。在已安装旧版中检查并执行更新。
+4. 重新安装旧版，在步骤 3 增加 `--tamper`，复制包会被修改一个字节。更新应报验签失败，不能关闭当前正常版本或改动会话文件。
+5. 增加 `--announced-version 9.9.9` 而保持原包及签名，测试版本绑定；应拒绝该包。断开服务器、取消下载、保存失败时也不得开始安装。
+
+本机演练只修改 `.local/` 中的副本；原始发行资产保持不变。切换回正式构建时清除 `STA_ALLOW_LOCAL_UPDATES` 和 localhost endpoint，使用正式签名配置重新构建。
+
+## 已实现的退出与存储边界
+
+- 前端在原生关闭和更新之前等待 JSON 保存；保存失败保持窗口打开。
+- Rust 关闭 Python stdin，请求服务正常结束；Windows JobObject 同时管理 PyInstaller 子进程，主程序异常结束时清理后台进程。
+- 更新只替换程序，本地会话目录独立。未实现通用数据库迁移、任意断电自动回滚或双 Agent 业务执行，不能用骨架演练声称这些能力完成。

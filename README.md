@@ -1,0 +1,73 @@
+# SuperTravelAgent
+
+本地优先的旅行规划桌面客户端。这个独立工程实现第一阶段的最小骨架：**Tauri 2 + React + Python、本地 JSON 会话、三平台打包与签名更新**。
+
+界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。地图和杭州行程是明确标注的界面示例；当前没有接入真实旅行规划 Agent、模型调用、票务或地图服务。
+
+## 当前边界
+
+- 冰川白地图工作台、日期与地点切换、浮动日程卡、草稿编辑及应用、聊天记录、历史与设置。
+- Python 只监听本机动态端口，使用启动时生成的随机访问令牌；退出桌面客户端时结束服务。
+- 会话按文件保存，默认在操作系统用户数据目录；可选择其他目录，下一次启动生效，原文件不会自动搬动或删除。
+- 一份会话对应一个 JSON，保存采用临时文件、校验、备份与原子替换，修订冲突不会直接覆盖。
+- Windows、macOS、Linux 分别在对应的 GitHub Actions 环境构建。安装包有无成功产出、原生升级是否实际验证，见 [验证记录](docs/VALIDATION.md)。
+
+## 本地开发
+
+需要 Node.js 22.12+ 和 Python 3.13。桌面开发还需要 Rust 1.90+ 与 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
+
+```powershell
+npm ci
+python -m venv backend/.venv
+# Windows
+backend/.venv/Scripts/python -m pip install -r backend/requirements-dev.txt
+# macOS / Linux 将上一行的 Python 路径替换为 backend/.venv/bin/python
+npm run dev
+```
+
+浏览器打开 `http://127.0.0.1:1420`。此命令同时启动独立 Python 与 Vite，开发会话保存在 `.local/dev-data`，不接触旧项目的数据。单独执行 `npm run web` 只预览前端，不能保存会话；浏览器模式不安装桌面更新。
+
+桌面开发：
+
+```powershell
+npm run desktop:dev
+```
+
+桌面壳负责启动自己的 Python，不要把 `npm run dev` 与 `desktop:dev` 同时运行。可用 `STA_PYTHON` 显式指定解释器；优先使用本工程的 `backend/.venv`。
+
+## 检查与打包
+
+```powershell
+npm run build
+backend/.venv/Scripts/python -m pytest backend/tests -q
+backend/.venv/Scripts/python scripts/test-platform.py
+npm run desktop:build
+```
+
+Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
+
+## 更新与发布
+
+公开仓库：<https://github.com/IT-coder-Yy/SuperTravelAgent>。
+
+- GitHub Actions 构建 Windows x64、macOS arm64/x64、Linux x64。
+- 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT` 变量。
+- 私钥不写入源码或客户端；本地生成的私钥仅存放在被 Git 忽略的 `.local/keys/`，请独立备份。丢失私钥会影响已安装版本的后续更新。
+- 更新流程：检查新版本 → 用户同意 → 保存当前会话/草稿 → 下载与验签 → 关闭 Python → 安装并重启。
+- 下载可尝试公开 GitHub 镜像，失败回 GitHub 原始资产；镜像与原始下载都必须经过同一公钥验签。镜像不用于发送模型 Key 或本地服务令牌。
+- 未配置更新源时界面明确显示未配置，不冒充“已是最新”。
+
+macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可能需要系统允许。Tauri 更新包签名与 Apple 签名是两套机制，实际运行和升级结果以验证记录为准。
+
+## 目录
+
+| 目录 | 职责 |
+| --- | --- |
+| `src/` | React 工作台、API 与桌面桥接 |
+| `backend/` | Python 服务、JSON 存储与测试 |
+| `src-tauri/` | Rust 桌面生命周期、更新、用户数据目录 |
+| `scripts/` | 开发、sidecar 构建、发布清单与检查脚本 |
+| `.github/workflows/` | 三平台构建和发布流水线 |
+| `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
+
+后续阶段再接入已确定的规划 Agent 与执行 Agent。现阶段的聊天回复用于解释骨架边界，不代表真正完成了规划。

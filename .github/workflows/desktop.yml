@@ -1,0 +1,104 @@
+name: Desktop bundles
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: macos-15
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2
+      - run: npm ci
+      - run: python -m pip install -r backend/requirements-dev.txt
+      - run: python -m pytest backend/tests -q
+      - run: python scripts/test-platform.py
+      - name: Build native app and smoke-test frozen backend
+        id: build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          STA_UPDATER_PUBLIC_KEY: ${{ vars.STA_UPDATER_PUBLIC_KEY }}
+          STA_UPDATE_ENDPOINT: ${{ vars.STA_UPDATE_ENDPOINT }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: node scripts/ci-build.mjs ${{ matrix.target }} ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: artifacts/${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish complete signed release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: artifacts
+      - name: Verify every platform before publishing metadata
+        run: python scripts/prepare-release.py --merge artifacts --output release
+      - name: Stage release, upload assets, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --draft --verify-tag --title "SuperTravel $GITHUB_REF_NAME" --notes "桌面骨架验证版本。包含 Windows、macOS（Apple Silicon / Intel）、Linux 安装包及签名更新。当前界面为示例行程，旅行模型与真实地图服务尚未接入。macOS 包尚未公证，首次打开可能需要系统设置允许。"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

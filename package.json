@@ -1,0 +1,37 @@
+{
+  "name": "supertravel-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "web": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 1420 --strictPort",
+    "tauri": "tauri",
+    "desktop:dev": "node scripts/desktop-build.mjs --dev",
+    "desktop:build": "node scripts/desktop-build.mjs",
+    "test:platform": "python scripts/test-platform.py",
+    "test:backend": "python -m pytest backend/tests -q"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-dialog": "2.8.3",
+    "lucide-react": "1.61.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

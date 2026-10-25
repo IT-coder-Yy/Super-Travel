@@ -1,0 +1,35 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+export function updaterConfig(env) {
+  const endpoint = (env.STA_UPDATE_ENDPOINT || '').trim();
+  const pubkey = (env.STA_UPDATER_PUBLIC_KEY || '').trim();
+  if (!endpoint && !pubkey) return { bundle: { createUpdaterArtifacts: false } };
+  if (!endpoint || !pubkey) throw new Error('STA_UPDATE_ENDPOINT 与 STA_UPDATER_PUBLIC_KEY 必须同时配置。');
+  const url = new URL(endpoint);
+  if (url.username || url.password) throw new Error('更新地址不能包含账号凭据。');
+  const local = url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && env.STA_ALLOW_LOCAL_UPDATES === '1';
+  if (url.protocol !== 'https:' && !local) throw new Error('发行更新地址必须使用 HTTPS；本机演练需要显式 STA_ALLOW_LOCAL_UPDATES=1。');
+  const publicText = Buffer.from(pubkey, 'base64').toString('utf8');
+  if (!publicText.startsWith('untrusted comment:') || !publicText.split(/\r?\n/)[1]) throw new Error('更新公钥不是 Tauri signer 生成的公钥。');
+  return {
+    bundle: { createUpdaterArtifacts: true },
+    plugins: { updater: { pubkey, endpoints: [endpoint], requireSignedVersion: true, allowDowngrades: false, dangerousInsecureTransportProtocol: local, windows: { installMode: 'passive' } } },
+  };
+}
+
+export async function configureUpdater(env = process.env) {
+  const config = updaterConfig(env);
+  const out = path.join(root, '.local', 'updater.config.json');
+  await mkdir(path.dirname(out), { recursive: true });
+  await writeFile(out, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+  return out;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { console.log(`Updater config: ${await configureUpdater()}`); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}

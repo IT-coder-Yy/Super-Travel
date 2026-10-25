@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SuperTravel",
+  "version": "0.1.0",
+  "identifier": "com.supertravel.desktop",
+  "build": {
+    "beforeDevCommand": "npm run web",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{"label": "main", "title": "SuperTravel · 留一点空白", "width": 1440, "height": 960, "minWidth": 960, "minHeight": 640}],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: https://*.wikimedia.org; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:1420 ws://127.0.0.1:1420 ws://localhost:1420; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/supertravel-backend"],
+    "createUpdaterArtifacts": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"],
+    "windows": {"nsis": {"installMode": "currentUser"}},
+    "macOS": {"minimumSystemVersion": "12.0", "signingIdentity": "-"}
+  }
+}
