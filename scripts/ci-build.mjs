@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, cpSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 const [target, bundles] = process.argv.slice(2);
 if (!target || !bundles) throw new Error('Usage: node scripts/ci-build.mjs <target-triple> <bundles>');
@@ -19,6 +19,15 @@ const extension = target.includes('windows') ? '.exe' : '';
 run('python',['scripts/smoke-sidecar.py',`src-tauri/binaries/supertravel-backend-${target}${extension}`,'--version',version]);
 const bundleDir=`src-tauri/target/${target}/release/bundle`;
 const out=`artifacts/${target}`;
+if(process.platform==='darwin' || process.platform==='linux') {
+  const mac=process.platform==='darwin';
+  const folder=path.join(bundleDir,mac?'macos':'appimage');
+  const artifacts=readdirSync(folder,{withFileTypes:true}).filter(entry=>mac ? entry.isDirectory() && entry.name.endsWith('.app') : entry.isFile() && entry.name.endsWith('.AppImage'));
+  if(artifacts.length!==1) throw new Error(`Expected one native application in ${folder}, found ${artifacts.length}`);
+  const smoke=['scripts/smoke-native.py',path.join(folder,artifacts[0].name),'--version',version];
+  if(mac) run('python',smoke);
+  else run('xvfb-run',['-a','dbus-run-session','--','python',...smoke]);
+}
 if(signed) {
   const repository=process.env.GITHUB_REPOSITORY;
   if(!repository || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid GITHUB_REPOSITORY');

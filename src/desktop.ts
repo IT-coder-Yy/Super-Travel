@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 export interface BackendConnection { baseUrl: string; token: string; dataDir: string }
 export interface UpdateCheck { configured: boolean; version?: string | null; body?: string | null }
+export type UpdatePhase = 'downloading' | 'installing';
 
 export async function getBackendConnection(): Promise<BackendConnection> {
   if (!isTauri()) {
@@ -32,9 +33,9 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 }
 
 /** The caller must finish saving the current conversation before calling this function. */
-export async function installUpdate(onProgress: (percent: number | null) => void): Promise<void> {
+export async function installUpdate(onProgress: (percent: number | null, phase: UpdatePhase) => void): Promise<void> {
   if (!isTauri()) throw new Error('请在桌面客户端中安装更新。');
-  const unlisten = await listen<{ percent: number | null }>('supertravel-update', (event) => onProgress(event.payload.percent));
+  const unlisten = await listen<{ percent: number | null; phase: UpdatePhase }>('supertravel-update', (event) => onProgress(event.payload.percent, event.payload.phase));
   try { await invoke('install_update'); } finally { unlisten(); }
 }
 

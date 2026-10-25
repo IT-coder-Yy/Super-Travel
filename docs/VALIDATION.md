@@ -10,11 +10,12 @@
 | Python JSON/API 测试 | 25 项通过 | 独立 Python 3.13 虚拟环境，验证鉴权、原子保存、冲突及进程退出 |
 | 前端类型检查与构建 | 通过 | `npm run build` |
 | 浏览器界面与保存恢复 | 通过：Edge，2 passed（7.5s） | 独立会话、草稿刷新恢复/放弃/应用、保存中编辑锁定、聊天保存恢复、更新未配置状态、1024px 无横向溢出；1440×960 与 1024×768 截图均在照片完整解码后生成 |
-| 平台脚本测试 | 首轮 7 项通过 | `scripts/test-platform.py`；独立测试签名另验证版本不匹配拒绝 |
+| 平台脚本测试 | 9 项通过 | `scripts/test-platform.py`；独立测试签名另验证版本不匹配拒绝 |
 | Windows 冻结 Python 服务 | 通过 | PyInstaller 6.20.0；清除 Python 环境变量且 `python` 命令不可解析后，独立 EXE 通过鉴权、JSON 保存读取、409 及 EOF 退出 |
-| Windows x64 包 | 待验证 | GitHub Actions |
-| macOS arm64/x64 包 | 待验证 | GitHub Actions |
-| Linux x64 包 | 待验证 | GitHub Actions |
+| Windows x64 包 | 0.1.0 签名包已构建并实际安装 | Actions 40214413091；NSIS 安装退出码 0 |
+| Windows 桌面保存与正常退出 | 通过 | 原生 WebView2 中创建会话、正式行程、聊天与草稿；延迟 PUT 时窗口等待写入再关闭，退出后无本应用后台进程 |
+| macOS arm64/x64 包 | 0.1.0 签名包已构建 | Actions 40214413091；两个架构冻结后端与 Rust 检查通过，桌面运行验证将在后续构建中执行 |
+| Linux x64 包 | 0.1.0 签名 AppImage 已构建 | Actions 40214413091；冻结后端与 Rust 检查通过，桌面运行验证将在后续构建中执行 |
 | 0.1.0 → 0.1.1 原生更新 | 待验证 | 不能用只生成清单代替实际安装验证 |
 
 ## 已知边界

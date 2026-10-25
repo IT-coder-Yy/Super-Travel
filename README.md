@@ -4,6 +4,10 @@
 
 界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。地图和杭州行程是明确标注的界面示例；当前没有接入真实旅行规划 Agent、模型调用、票务或地图服务。
 
+![当前可运行界面](docs/preview.png)
+
+截图来自本工程实际运行页面。照片：[DXR 的桥畔日落](https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg)、[Tyler Valentine 的西湖暮色](https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg)，按 CC BY-SA 4.0 裁切展示；界面内也保留来源说明。
+
 ## 当前边界
 
 - 冰川白地图工作台、日期与地点切换、浮动日程卡、草稿编辑及应用、聊天记录、历史与设置。

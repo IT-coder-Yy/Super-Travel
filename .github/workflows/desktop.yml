@@ -56,12 +56,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 xvfb xauth dbus-x11
       - run: npm ci
       - run: python -m pip install -r backend/requirements-dev.txt
       - run: python -m pytest backend/tests -q
       - run: python scripts/test-platform.py
-      - name: Build native app and smoke-test frozen backend
+      - name: Build native app and smoke-test startup
         id: build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -102,5 +102,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" release/* --draft --verify-tag --title "SuperTravel $GITHUB_REF_NAME" --notes "桌面骨架验证版本。包含 Windows、macOS（Apple Silicon / Intel）、Linux 安装包及签名更新。当前界面为示例行程，旅行模型与真实地图服务尚未接入。macOS 包尚未公证，首次打开可能需要系统设置允许。"
+          release_state="$(python - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+          endpoint = "https://api.github.com/repos/" + os.environ["GITHUB_REPOSITORY"] + "/releases/tags/" + urllib.parse.quote(os.environ["GITHUB_REF_NAME"], safe="")
+          request = urllib.request.Request(endpoint, headers={"Accept": "application/vnd.github+json", "User-Agent": "SuperTravel-release"})
+          request.add_unredirected_header("Authorization", "Bearer " + os.environ["GH_TOKEN"])
+          try:
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  release = json.load(response)
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise SystemExit(f"Release lookup failed: HTTP {error.code}")
+              print("missing")
+          else:
+              print("draft" if release["draft"] else "published")
+          PY
+          )"
+          case "$release_state" in
+            missing) gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "SuperTravel $GITHUB_REF_NAME" --notes "桌面骨架验证版本。包含 Windows、macOS（Apple Silicon / Intel）、Linux 安装包及签名更新。当前界面为示例行程，旅行模型与真实地图服务尚未接入。macOS 包尚未公证，首次打开可能需要系统设置允许。" ;;
+            draft) ;;
+            published) echo "Release already published; refusing to replace assets." >&2; exit 1 ;;
+            *) echo "Unexpected release state; refusing to upload." >&2; exit 1 ;;
+          esac
+          gh release upload "$GITHUB_REF_NAME" release/* --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false --latest
