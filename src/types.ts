@@ -1,7 +1,8 @@
 export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number }
 export type TripDay = { day: number; title: string; subtitle: string; activities: Activity[] }
 export type Message = { id: string; role: 'user' | 'assistant'; content: string }
-export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null }
+export type AgentState = { persisted?: boolean; run_id?: string | null; status: 'idle' | 'running' | 'replanning' | 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'interrupted'; plan?: string[]; results?: { step: string; content: string }[]; content?: string; error?: string | null; tool_calls?: number }
+export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null; agent?: AgentState; agentPending?: boolean }
 export type ConversationSummary = { id: string; title: string; revision: number; updated_at: string }
 export type Conversation = ConversationSummary & { data: WorkspaceData }
 export type RecoveryOption = { id: string; title: string; message: string; backup_updated_at: string | null; token: string | null }
@@ -38,6 +39,8 @@ export function isWorkspaceData(value: unknown): value is WorkspaceData {
   if (!value || typeof value !== 'object') return false
   const data = value as Partial<WorkspaceData>
   return data.schema === 1 && validDays(data.days) && typeof data.selectedDay === 'number' &&
+    (data.agentPending === undefined || typeof data.agentPending === 'boolean') &&
+    (data.agent === undefined || !!data.agent && typeof data.agent === 'object' && ['idle', 'running', 'replanning', 'completed', 'failed', 'cancelled', 'needs_input', 'interrupted'].includes(data.agent.status) && (data.agent.plan === undefined || Array.isArray(data.agent.plan) && data.agent.plan.every(item => typeof item === 'string')) && (data.agent.content === undefined || typeof data.agent.content === 'string') && (data.agent.error == null || typeof data.agent.error === 'string')) &&
     Array.isArray(data.favorites) && data.favorites.every(item => typeof item === 'string') &&
     Array.isArray(data.messages) && data.messages.every(message => message && typeof message.id === 'string' && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string') &&
     (data.draft === null || validDays(data.draft))

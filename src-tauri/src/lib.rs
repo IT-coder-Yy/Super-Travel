@@ -1,4 +1,5 @@
 mod backend;
+mod model_settings;
 mod updates;
 
 use backend::{Backend, Connection};
@@ -31,6 +32,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Backend::default())
+        .manage(model_settings::ModelSettings::default())
         .manage(Updates::default())
         .setup(|app| {
             let backend = app.state::<Backend>();
@@ -43,6 +45,9 @@ pub fn run() {
             backend_connection,
             app_version,
             set_data_directory,
+            model_settings::get_model_settings,
+            model_settings::save_model_settings,
+            model_settings::delete_model_key,
             updates::check_update,
             updates::install_update,
             updates::cancel_update

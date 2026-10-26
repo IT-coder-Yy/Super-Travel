@@ -1,0 +1,10 @@
+{
+  "platform": "windows-x86_64",
+  "from": "0.1.0",
+  "to": "0.1.1",
+  "old_client_gui_tested": true,
+  "conversation_trip_draft_and_messages": "deep-equal",
+  "custom_directory_preferences": "byte-identical",
+  "backend_directory": "matches configured Chinese and space path",
+  "release_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.1"
+}

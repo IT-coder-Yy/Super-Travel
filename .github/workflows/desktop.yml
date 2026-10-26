@@ -56,7 +56,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 xvfb xauth dbus-x11
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf libfuse2 xvfb xauth dbus-x11 gnome-keyring libglib2.0-bin
       - run: npm ci
       - run: python -m pip install -r backend/requirements-dev.txt
       - run: python -m pytest backend/tests -q
@@ -70,8 +70,82 @@ jobs:
           STA_UPDATE_ENDPOINT: ${{ vars.STA_UPDATE_ENDPOINT }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: node scripts/ci-build.mjs ${{ matrix.target }} ${{ matrix.bundles }}
-      - name: Native updater configuration tests
+      - name: Native Rust unit tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --release --lib --locked --target ${{ matrix.target }}
+      - name: Build real native credential probe
+        run: cargo build --manifest-path src-tauri/Cargo.toml --example credential-probe --release --locked --target ${{ matrix.target }}
+      - name: Verify Windows Credential Manager
+        if: runner.os == 'Windows'
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $probeOutput = & "src-tauri/target/${{ matrix.target }}/release/examples/credential-probe.exe" "artifacts/${{ matrix.target }}/credential-report.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Native credential probe failed' }
+          $probeOutput | Write-Output
+          if ($probeOutput -notcontains 'SUPERTRAVEL_CREDENTIAL_PROBE_OK:windows') { throw 'Missing credential probe success evidence' }
+      - name: Verify isolated macOS Keychain
+        if: runner.os == 'macOS'
+        timeout-minutes: 3
+        shell: bash
+        env:
+          STA_CREDENTIAL_TARGET: ${{ matrix.target }}
+        run: |
+          python - <<'PY'
+          import os, pathlib, shlex, subprocess, tempfile, uuid
+          def security(*args, check=True):
+              return subprocess.run(['security', *args], check=check, capture_output=True, text=True, timeout=15)
+          previous_default = shlex.split(security('default-keychain', '-d', 'user', check=False).stdout)
+          if previous_default == ['<NULL>']:
+              previous_default = []
+          previous_search = shlex.split(security('list-keychains', '-d', 'user').stdout)
+          target = os.environ['STA_CREDENTIAL_TARGET']
+          with tempfile.TemporaryDirectory(prefix='sta-credential-', dir=os.environ['RUNNER_TEMP']) as temporary:
+              keychain = str(pathlib.Path(temporary) / 'probe.keychain-db')
+              password = uuid.uuid4().hex  # Only protects this disposable CI test keychain.
+              created = False
+              try:
+                  security('create-keychain', '-p', password, keychain)
+                  created = True
+                  security('default-keychain', '-d', 'user', '-s', keychain)
+                  security('unlock-keychain', '-p', password, keychain)
+                  result = subprocess.run([f'src-tauri/target/{target}/release/examples/credential-probe', f'artifacts/{target}/credential-report.json'], capture_output=True, text=True, timeout=60)
+                  print(result.stdout, end='')
+                  print(result.stderr, end='')
+                  result.check_returncode()
+                  assert 'SUPERTRAVEL_CREDENTIAL_PROBE_OK:macos' in result.stdout.splitlines()
+              finally:
+                  commands = [('default-keychain', '-d', 'user', '-s', *previous_default), ('list-keychains', '-d', 'user', '-s', *previous_search)]
+                  if created:
+                      commands.append(('delete-keychain', keychain))
+                  cleanup_failed = False
+                  for command in commands:
+                      try:
+                          cleanup_failed |= security(*command, check=False).returncode != 0
+                      except subprocess.SubprocessError:
+                          cleanup_failed = True
+                  if cleanup_failed:
+                      raise RuntimeError('Could not restore the CI keychain preferences or remove the temporary keychain')
+          PY
+      - name: Verify isolated Linux Secret Service
+        if: runner.os == 'Linux'
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          credential_root="$(mktemp -d "$RUNNER_TEMP/sta-credential.XXXXXX")"
+          [[ "$credential_root" == "$RUNNER_TEMP"/sta-credential.* ]] || exit 1
+          trap 'rm -rf -- "$credential_root"' EXIT
+          mkdir -p "$credential_root/home" "$credential_root/data" "$credential_root/config" "$credential_root/runtime/keyring"
+          chmod 700 "$credential_root/runtime"
+          env HOME="$credential_root/home" XDG_DATA_HOME="$credential_root/data" XDG_CONFIG_HOME="$credential_root/config" XDG_RUNTIME_DIR="$credential_root/runtime" \
+            dbus-run-session -- bash -euo pipefail -s -- "$PWD/src-tauri/target/${{ matrix.target }}/release/examples/credential-probe" "$PWD/artifacts/${{ matrix.target }}/credential-report.json" <<'SH'
+          gnome-keyring-daemon --foreground --unlock --components=secrets --control-directory="$XDG_RUNTIME_DIR/keyring" <<< 'supertravel-ci-test-only' > "$XDG_RUNTIME_DIR/keyring.log" 2>&1 &
+          keyring_pid=$!
+          trap 'kill "$keyring_pid" 2>/dev/null || true; wait "$keyring_pid" 2>/dev/null || true' EXIT
+          gdbus wait --session --timeout 15 org.freedesktop.secrets
+          output="$(timeout 60 "$1" "$2")"
+          printf '%s\n' "$output"
+          [[ "$output" == 'SUPERTRAVEL_CREDENTIAL_PROBE_OK:linux' ]]
+          SH
       - name: Build isolated native updater probe
         if: runner.os != 'Windows' && steps.build.outputs.signed == 'true'
         run: cargo build --manifest-path src-tauri/Cargo.toml --example updater-probe --release --locked --target ${{ matrix.target }}

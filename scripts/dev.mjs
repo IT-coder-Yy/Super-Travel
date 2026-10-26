@@ -4,6 +4,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { parseEnv } from 'node:util';
+import { readFileSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const localPython = resolve(root, 'backend', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
@@ -11,9 +13,12 @@ const python = process.env.STA_PYTHON || (existsSync(localPython) ? localPython 
 const dataDir = resolve(root, '.local', 'dev-data');
 mkdirSync(dataDir, { recursive: true });
 const token = randomBytes(32).toString('hex');
+const appVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
+// Only the explicitly selected model fields enter the client; tool keys stay in the service.
+const modelEnv = process.env.STA_DEV_ENV_FILE ? parseEnv(readFileSync(process.env.STA_DEV_ENV_FILE, 'utf8')) : {};
 const backend = spawn(python, [resolve(root, 'backend/main.py'), '--host', '127.0.0.1', '--port', '0', '--data-dir', dataDir], {
   cwd: root,
-  env: { ...process.env, STA_BACKEND_TOKEN: token, PYTHONUNBUFFERED: '1' },
+  env: { ...process.env, STA_APP_VERSION: appVersion, STA_MODEL_API_KEY: modelEnv.SAGE_API_KEY || process.env.STA_MODEL_API_KEY || '', STA_MODEL_BASE_URL: modelEnv.SAGE_BASE_URL || process.env.STA_MODEL_BASE_URL || '', STA_MODEL_NAME: modelEnv.SAGE_MODEL_NAME || process.env.STA_MODEL_NAME || '', STA_BACKEND_TOKEN: token, PYTHONUNBUFFERED: '1' },
   stdio: ['pipe', 'pipe', 'pipe'],
   windowsHide: true,
 });

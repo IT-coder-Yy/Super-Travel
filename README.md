@@ -1,8 +1,8 @@
 # SuperTravelAgent
 
-本地优先的旅行规划桌面客户端。这个独立工程实现第一阶段的最小骨架：**Tauri 2 + React + Python、本地 JSON 会话、三平台打包与签名更新**。
+本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 0.1.1 桌面骨架，主分支正在接入 0.1.2 双 Agent；验收状态见 [M1](docs/VALIDATION.md) 与 [M2](docs/M2.md)。
 
-界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。地图和杭州行程是明确标注的界面示例；当前没有接入真实旅行规划 Agent、模型调用、票务或地图服务。
+界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。地图和杭州行程仍是明确标注的界面示例；主分支支持真实模型对话、计划和工具调用，真实行程生成与地图尚未贯通。
 
 ![当前可运行界面](docs/preview.png)
 
@@ -16,6 +16,7 @@
 - 会话按文件保存，默认在操作系统用户数据目录；可选择其他目录，下一次启动生效，原文件不会自动搬动或删除。
 - 一份会话对应一个 JSON，保存采用临时文件、校验、备份与原子替换，修订冲突不会直接覆盖。
 - 损坏会话在设置中可扫描有效备份，确认后恢复；原件另存到数据目录的 `recovered-originals/`，其余历史仍可使用。
+- 双 Agent 使用显式 Python 流程；按会话记录计划与进度，支持取消和重启中断，旧结果不能覆盖新任务。模型 Key 通过系统凭据库保存，浏览器开发模式仅放后端内存。
 - Windows、macOS、Linux 分别在对应的 GitHub Actions 环境构建。安装包有无成功产出、原生升级是否实际验证，见 [验证记录](docs/VALIDATION.md)。
 
 ## 本地开发
@@ -51,7 +52,7 @@ npm run test:ui
 npm run desktop:build
 ```
 
-界面测试需要先运行 `npm run dev`；本机默认使用已安装的 Edge。Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
+工作台与 Agent 界面测试自行启动隔离服务；开场测试和显式联网照片检查使用 `npm run dev` 的页面，本机默认使用已安装的 Edge。Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
 
 业务回归使用带来源说明的固定测试照片，避免外部图片连接失败阻断存储和编辑测试。单独验证真实照片可设置 `STA_LIVE_PHOTOS=1` 并运行 `npx playwright test -g "真实 Wikimedia"`；这项检查失败会如实报错，不回退测试照片。
 
@@ -79,4 +80,4 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 
-后续阶段再接入已确定的规划 Agent 与执行 Agent。现阶段的聊天回复用于解释骨架边界，不代表真正完成了规划。
+真实工具查询受开发者工具服务的额度和部署状态影响。完整行程生成与地图联调将在后续阶段完成；模型答复或示例地图不能作为已完成真实行程规划的证据。

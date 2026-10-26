@@ -200,6 +200,7 @@ impl Backend {
         let status = Arc::clone(&self.connection);
         let child = Arc::clone(&self.child);
         let generation = Arc::clone(&self.generation);
+        let app = app.clone();
         thread::spawn(move || {
             let result = receive
                 .recv_timeout(Duration::from_secs(45))
@@ -214,6 +215,14 @@ impl Backend {
                         data_dir: data_dir.to_string_lossy().into_owned(),
                     })
                 });
+            if generation.load(Ordering::SeqCst) != this_generation {
+                return;
+            }
+            if let Ok(connection) = &result {
+                tauri::async_runtime::block_on(crate::model_settings::sync_on_start(
+                    &app, connection,
+                ));
+            }
             if generation.load(Ordering::SeqCst) != this_generation {
                 return;
             }

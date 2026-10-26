@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/local-app';
 import { fileURLToPath } from 'node:url';
 
 async function captureLoadedWorkspace(page: Page, path: string) {
@@ -15,7 +16,8 @@ async function captureLoadedWorkspace(page: Page, path: string) {
 }
 
 test.describe('本地业务回归（固定图片）', () => {
-  test.beforeEach(async ({ page }, testInfo) => {
+  test.beforeEach(async ({ page, localApp }, testInfo) => {
+    await localApp.reset();
     await page.route('https://thumb.wikimedia.org/**/960px-Sunset_over_the_Zigzag_Bridge*.jpg', route => route.fulfill({ path: fileURLToPath(new URL('./fixtures/west-lake-sunset.jpg', import.meta.url)), contentType: 'image/jpeg' }));
     await page.route('https://thumb.wikimedia.org/**/500px-West_lake_twilight.jpg', route => route.fulfill({ path: fileURLToPath(new URL('./fixtures/west-lake-twilight.jpg', import.meta.url)), contentType: 'image/jpeg' }));
     await page.goto('/');
@@ -70,13 +72,15 @@ test.describe('本地业务回归（固定图片）', () => {
     await expect(page.locator('.draft-label')).toHaveCount(0);
     await page.getByLabel('旅行对话输入').fill('我想放慢节奏');
     await page.getByRole('button', { name: '发送消息', exact: true }).click();
-    await expect(page.getByText('我想放慢节奏', { exact: true })).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('请先在设置中配置模型连接');
+    await expect(page.getByLabel('旅行对话输入')).toHaveValue('我想放慢节奏');
+    await expect(page.locator('.message--user')).toHaveCount(0);
     await expect(page.locator('.storage-indicator')).toContainText('已保存到本机', { timeout: 15_000 });
     await page.reload();
     await expect(page.locator('.activity-description').first()).toHaveText('保存与恢复验证：留半小时休息。');
     await page.getByRole('button', { name: /旅伴对话/ }).click();
-    await expect(page.getByText('我想放慢节奏', { exact: true })).toBeVisible();
-    await expect(page.getByText(/尚未连接规划 Agent/)).toBeVisible();
+    await expect(page.locator('.message--user')).toHaveCount(0);
+    await expect(page.getByText('可以聊天、补充需求或查询旅行资料。地图与行程目前仍为示例。')).toBeVisible();
 
     await page.getByRole('button', { name: '设置与更新', exact: true }).click();
     await page.getByRole('button', { name: '检查更新', exact: true }).click();

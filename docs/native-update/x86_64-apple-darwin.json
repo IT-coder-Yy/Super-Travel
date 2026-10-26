@@ -1,0 +1,14 @@
+{
+  "platform": "darwin-x86_64-app",
+  "from": "0.1.0",
+  "to": "0.1.1",
+  "driver": "CI-only native Tauri updater API",
+  "old_client_gui_tested": false,
+  "old_native_startup": "passed",
+  "corrupt_download_rejected_old_install_preserved": "passed",
+  "interrupted_download_rejected_old_install_preserved": "passed",
+  "signed_native_install": "passed",
+  "new_native_startup_and_exit": "passed",
+  "conversation_trip_draft_and_config_bytes_preserved": "passed",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40288435265"
+}

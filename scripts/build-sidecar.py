@@ -30,7 +30,7 @@ def main() -> None:
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
                "--name", "supertravel-backend", "--distpath", str(work / "dist"),
                "--workpath", str(work / "build"), "--specpath", str(work),
-               "--collect-submodules", "uvicorn", str(ROOT / "backend" / "main.py")]
+               "--paths", str(ROOT), "--collect-submodules", "uvicorn", str(ROOT / "backend" / "main.py")]
     subprocess.run(command, cwd=ROOT, check=True)
     extension = ".exe" if platform.system() == "Windows" else ""
     source = work / "dist" / f"supertravel-backend{extension}"

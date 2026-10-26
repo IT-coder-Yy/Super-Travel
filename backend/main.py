@@ -1,4 +1,4 @@
-"""M1 local JSON API. No model or Agent is connected in this milestone."""
+"""Local JSON storage and the desktop's two-agent API."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,6 +24,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator
 import uvicorn
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from backend.agent_service import AgentService
+from backend.model import ModelError
 
 
 VERSION = os.environ.get("STA_APP_VERSION", "0.1.0")
@@ -147,7 +153,15 @@ class ConversationStore:
                 handle.write(payload)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, path)
+            # Windows can briefly deny replacement; retry only the already-written file.
+            for delay in (0.02, 0.05, 0.1, None):
+                try:
+                    os.replace(temporary, path)
+                    break
+                except PermissionError as exc:
+                    if os.name != "nt" or getattr(exc, "winerror", None) not in (5, 32, 33) or delay is None:
+                        raise
+                    time.sleep(delay)
             temporary = None
             if os.name != "nt":
                 descriptor = os.open(path.parent, os.O_RDONLY)
@@ -188,7 +202,18 @@ class ConversationStore:
             current, previous = self._read(conversation_id)
             if payload.expected_revision != current.revision:
                 raise StoreError(409, "revision_conflict", "会话已被更新，请重新加载。", current_revision=current.revision)
-            document = Conversation(id=current.id, title=payload.title, data=payload.data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
+            data = payload.data
+            if "agentPending" in current.data:
+                data = {**data, **{key: current.data[key] for key in ("messages", "agent", "agentPending") if key in current.data}}
+            document = Conversation(id=current.id, title=payload.title, data=data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
+            return self._save(document, previous)
+
+    def mutate(self, conversation_id: UUID, change) -> Conversation:
+        with self._lock(conversation_id):
+            current, previous = self._read(conversation_id)
+            data = current.data
+            change(data)
+            document = Conversation(id=current.id, title=current.title, data=data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
             return self._save(document, previous)
 
     def _ids(self) -> list[UUID]:
@@ -256,6 +281,9 @@ class ConversationStore:
             now = datetime.now(timezone.utc)
             # 损坏原件的修订号不可读，新的基线避免旧窗口继续写入原修订号。
             document = backup.model_copy(update={"revision": max(backup.revision + 1, int(now.timestamp() * 1000)), "updated_at": now})
+            if AgentService._active(document.data):
+                previous_run = document.data.get("agent")
+                document.data = {**document.data, "agentPending": False, "agent": {**(previous_run if isinstance(previous_run, dict) else {}), "status": "interrupted", "content": "备份中的任务已中断，可重新发送需求继续。"}}
             try:
                 archive = self.root / "recovered-originals"
                 if archive.is_symlink():
@@ -323,14 +351,21 @@ def create_app(data_dir: Path, token: str) -> FastAPI:
     if not token:
         raise ValueError("STA_BACKEND_TOKEN must be supplied by the desktop process")
     store = ConversationStore(data_dir)
-    app = FastAPI(title="SuperTravel Desktop", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+    agents = AgentService(store, StoreError)
+    app = FastAPI(title="SuperTravel Desktop", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None, lifespan=agents.lifespan)
     app.state.store = store
+    app.state.agents = agents
+    app.include_router(agents.router())
     app.add_middleware(LocalAccessMiddleware, token=token)
     app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
 
     @app.exception_handler(StoreError)
     async def storage_error(_request: Any, exc: StoreError) -> JSONResponse:
         return JSONResponse(status_code=exc.status, content={"detail": exc.detail})
+
+    @app.exception_handler(ModelError)
+    async def model_error(_request: Any, exc: ModelError) -> JSONResponse:
+        return JSONResponse(status_code=502, content={"detail": {"code": exc.code, "message": str(exc)}})
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(_request: Any, exc: RequestValidationError) -> JSONResponse:
@@ -354,12 +389,13 @@ def create_app(data_dir: Path, token: str) -> FastAPI:
         return store.recovery_options()
 
     @app.post("/api/conversations/{conversation_id}/recover", response_model=Conversation)
-    def recover_conversation(conversation_id: UUID, payload: RecoveryInput) -> Conversation:
+    async def recover_conversation(conversation_id: UUID, payload: RecoveryInput) -> Conversation:
+        await agents.discard(conversation_id)
         return store.recover(conversation_id, payload.token)
 
     @app.get("/api/conversations/{conversation_id}", response_model=Conversation)
     def get_conversation(conversation_id: UUID) -> Conversation:
-        return store.get(conversation_id)
+        return agents.read(conversation_id)
 
     @app.put("/api/conversations/{conversation_id}", response_model=Conversation)
     def update_conversation(conversation_id: UUID, payload: ConversationUpdate) -> Conversation:
