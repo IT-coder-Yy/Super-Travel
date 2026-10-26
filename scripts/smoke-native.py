@@ -12,6 +12,7 @@ Only stdlib, ps, and macOS's lsof are needed. No credentials are read from proce
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from dataclasses import dataclass
 import json
 import os
@@ -140,15 +141,15 @@ def launch_command(artifact: Path) -> tuple[list[str], str]:
     return command, name
 
 
-def run_smoke(artifact: Path, version: str, timeout: float, hold: float, shutdown_timeout: float) -> None:
+def run_smoke(artifact: Path, version: str, timeout: float, hold: float, shutdown_timeout: float, profile: Path | None = None) -> None:
     command, main_name = launch_command(artifact)
     opener = build_opener(ProxyHandler({}))
-    with tempfile.TemporaryDirectory(prefix="supertravel-native-") as temporary:
+    with (tempfile.TemporaryDirectory(prefix="supertravel-native-") if profile is None else nullcontext(str(profile))) as temporary:
         directory = Path(temporary)
         env = dict(os.environ)
         for key, child in (("HOME", "home"), ("XDG_DATA_HOME", "data"), ("XDG_CONFIG_HOME", "config"), ("XDG_CACHE_HOME", "cache")):
             location = directory / child
-            location.mkdir()
+            location.mkdir(parents=True, exist_ok=True)
             env[key] = str(location)
         # Never forward release signing secrets to the application being exercised.
         for key in ("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "STA_BACKEND_TOKEN", "STA_APP_VERSION", "PYTHONHOME", "PYTHONPATH"):
@@ -265,11 +266,12 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=75)
     parser.add_argument("--hold-seconds", type=float, default=3)
     parser.add_argument("--shutdown-timeout", type=float, default=15)
+    parser.add_argument("--profile", type=Path, help="Reuse an explicitly created isolated test profile across an upgrade; never removed by this script")
     args = parser.parse_args()
     if min(args.timeout, args.hold_seconds, args.shutdown_timeout) <= 0:
         parser.error("timeouts and hold duration must be positive")
     try:
-        run_smoke(args.artifact.resolve(), args.version, args.timeout, args.hold_seconds, args.shutdown_timeout)
+        run_smoke(args.artifact.resolve(), args.version, args.timeout, args.hold_seconds, args.shutdown_timeout, args.profile.resolve() if args.profile else None)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         raise SystemExit(f"Native smoke failed: {error}") from error
 

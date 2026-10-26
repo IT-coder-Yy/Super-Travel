@@ -104,9 +104,112 @@ def test_corrupt_file_is_never_overwritten(client, bad_content):
     path.write_bytes(bad_content)
     route = f"/api/conversations/{document['id']}"
     assert client.get(route, headers=AUTH).status_code == 503
-    assert client.get("/api/conversations", headers=AUTH).status_code == 503
+    assert client.get("/api/conversations", headers=AUTH).json() == []
+    issue = client.get("/api/conversations/recovery", headers=AUTH).json()[0]
+    assert issue["id"] == document["id"]
+    assert issue["token"] is None
     assert client.put(route, headers=AUTH, json={"title": "replacement", "data": {}, "expected_revision": 1}).status_code == 503
     assert path.read_bytes() == bad_content
+
+
+def damaged_with_backup(client):
+    original = create(client)
+    route = f"/api/conversations/{original['id']}"
+    changed = client.put(route, headers=AUTH, json={"title": "损坏前的修改", "data": {"draft": ["草稿"]}, "expected_revision": 1}).json()
+    store = client.app.state.store
+    path = store.conversations / f"{original['id']}.json"
+    path.write_bytes(b'{"broken-original":')
+    option = client.get("/api/conversations/recovery", headers=AUTH).json()[0]
+    return original, changed, path, option
+
+
+def test_recovery_preserves_original_backup_and_other_history(client):
+    original, changed, path, option = damaged_with_backup(client)
+    healthy = create(client, title="正常会话")
+    store = client.app.state.store
+    backup_path = store.backups / path.name
+    backup_before = backup_path.read_bytes()
+    assert [item["id"] for item in client.get("/api/conversations", headers=AUTH).json()] == [healthy["id"]]
+    assert option["backup_updated_at"] == original["updated_at"]
+    response = client.post(f"/api/conversations/{original['id']}/recover", headers=AUTH, json={"token": option["token"]})
+    assert response.status_code == 200, response.text
+    restored = response.json()
+    assert restored["data"] == original["data"]
+    assert changed["revision"] < restored["revision"] < 2**53
+    assert backup_path.read_bytes() == backup_before
+    archived = list((store.root / "recovered-originals").glob("*.json"))
+    assert len(archived) == 1 and archived[0].read_bytes() == b'{"broken-original":'
+    assert client.get("/api/conversations/recovery", headers=AUTH).json() == []
+    assert len(client.get("/api/conversations", headers=AUTH).json()) == 2
+    assert client.put(f"/api/conversations/{original['id']}", headers=AUTH, json={"title": "迟到修改", "data": {}, "expected_revision": changed["revision"]}).status_code == 409
+    with TestClient(backend.create_app(store.root, TOKEN)) as restarted:
+        assert restarted.get(f"/api/conversations/{original['id']}", headers=AUTH).json() == restored
+
+
+@pytest.mark.parametrize("changed_file", ["damaged-main", "healthy-main", "backup"])
+def test_recovery_refuses_stale_scan(client, changed_file):
+    original, changed, path, option = damaged_with_backup(client)
+    store = client.app.state.store
+    if changed_file == "damaged-main":
+        path.write_bytes(b"different broken bytes")
+    elif changed_file == "healthy-main":
+        path.write_text(json.dumps(changed), encoding="utf-8")
+    else:
+        replacement = {**original, "title": "更新过的备份"}
+        (store.backups / path.name).write_text(json.dumps(replacement), encoding="utf-8")
+    before = path.read_bytes()
+    response = client.post(f"/api/conversations/{original['id']}/recover", headers=AUTH, json={"token": option["token"]})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "recovery_changed"
+    assert path.read_bytes() == before
+    assert not (store.root / "recovered-originals").exists()
+
+
+@pytest.mark.parametrize("bad_backup", ["malformed", "mismatched-id"])
+def test_invalid_backup_is_not_offered_or_restored(client, bad_backup):
+    original, _, path, _ = damaged_with_backup(client)
+    store = client.app.state.store
+    backup = store.backups / path.name
+    backup.write_bytes(b"broken" if bad_backup == "malformed" else json.dumps({**original, "id": str(uuid4())}).encode())
+    option = client.get("/api/conversations/recovery", headers=AUTH).json()[0]
+    assert option["token"] is None and option["backup_updated_at"] is None
+    assert client.post(f"/api/conversations/{original['id']}/recover", headers=AUTH, json={"token": "0" * 64}).status_code == 409
+    assert path.read_bytes() == b'{"broken-original":'
+    assert not (store.root / "recovered-originals").exists()
+
+
+def test_recovery_requires_auth_and_preserving_original_first(client, monkeypatch):
+    original, _, path, option = damaged_with_backup(client)
+    store = client.app.state.store
+    route = f"/api/conversations/{original['id']}/recover"
+    assert client.get("/api/conversations/recovery").status_code == 401
+    assert client.post(route, json={"token": option["token"]}).status_code == 401
+    replace = store._atomic_replace
+
+    def fail_archive(destination, payload):
+        if destination.parent.name == "recovered-originals":
+            raise OSError("disk failure before archive")
+        replace(destination, payload)
+
+    monkeypatch.setattr(store, "_atomic_replace", fail_archive)
+    assert client.post(route, headers=AUTH, json={"token": option["token"]}).status_code == 503
+    assert path.read_bytes() == b'{"broken-original":'
+
+
+def test_recovery_rechecks_external_edit_after_archiving(client, monkeypatch):
+    original, changed, path, option = damaged_with_backup(client)
+    store = client.app.state.store
+    replace = store._atomic_replace
+    fresh = json.dumps(changed).encode()
+
+    def external_edit(destination, payload):
+        replace(destination, payload)
+        if destination.parent.name == "recovered-originals":
+            path.write_bytes(fresh)
+
+    monkeypatch.setattr(store, "_atomic_replace", external_edit)
+    assert client.post(f"/api/conversations/{original['id']}/recover", headers=AUTH, json={"token": option["token"]}).status_code == 409
+    assert path.read_bytes() == fresh
 
 
 def test_failed_atomic_replace_preserves_original_and_backup(client, monkeypatch):

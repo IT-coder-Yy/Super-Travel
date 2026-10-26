@@ -1,5 +1,5 @@
 import { getBackendConnection } from './desktop'
-import type { Conversation, ConversationSummary, WorkspaceData } from './types'
+import type { Conversation, ConversationSummary, RecoveryOption, WorkspaceData } from './types'
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const connection = await getBackendConnection()
@@ -10,13 +10,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    if (response.status === 409) throw new Error('这个会话已有新版本。请先重新打开历史会话，再应用修改。')
     throw new Error(body?.detail?.message || (typeof body?.detail === 'string' ? body.detail : `本地服务请求失败（${response.status}）`))
   }
   return response.json() as Promise<T>
 }
 
 export const listConversations = () => request<ConversationSummary[]>('/conversations')
+export const listRecoveryOptions = () => request<RecoveryOption[]>('/conversations/recovery')
+export const recoverConversation = (id: string, token: string) => request<Conversation>(`/conversations/${encodeURIComponent(id)}/recover`, { method: 'POST', body: JSON.stringify({ token }) })
 export const readConversation = (id: string) => request<Conversation>(`/conversations/${encodeURIComponent(id)}`)
 export const createConversation = (title: string, data: WorkspaceData) => request<Conversation>('/conversations', { method: 'POST', body: JSON.stringify({ title, data }) })
 export const saveConversation = (current: ConversationSummary, data: WorkspaceData) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}`, {

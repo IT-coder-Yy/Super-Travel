@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Compass, Download, FolderOpen, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
-import { createConversation, listConversations, readConversation, saveConversation } from './api'
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Download, FolderOpen, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Users, X } from 'lucide-react'
+import { createConversation, listConversations, listRecoveryOptions, readConversation, recoverConversation, saveConversation } from './api'
 import { cancelUpdate, checkForUpdate, chooseDataDirectory, getAppVersion, getBackendConnection, installUpdate, onBeforeClose, type UpdateCheck, type UpdatePhase } from './desktop'
 import { MapCanvas } from './components/MapCanvas'
-import { createExample, isWorkspaceData, type Activity, type ConversationSummary, type TripDay, type WorkspaceData } from './types'
+import appIcon from './assets/app-icon.svg'
+import { createExample, isWorkspaceData, type Activity, type ConversationSummary, type RecoveryOption, type TripDay, type WorkspaceData } from './types'
 
 const PHOTO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Sunset_over_the_Zigzag_Bridge%2C_West_Lake%2C_Hangzhou_20090909_1.jpg/960px-Sunset_over_the_Zigzag_Bridge%2C_West_Lake%2C_Hangzhou_20090909_1.jpg'
 const PHOTO_TWO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/West_lake_twilight.jpg/500px-West_lake_twilight.jpg'
@@ -40,6 +41,9 @@ export default function App() {
   const closeSaveRef = useRef<() => Promise<void>>(async () => undefined)
   const [current, setCurrent] = useState<ConversationSummary | null>(null)
   const [history, setHistory] = useState<ConversationSummary[]>([])
+  const [recoveryOptions, setRecoveryOptions] = useState<RecoveryOption[]>([])
+  const [scanning, setScanning] = useState(false)
+  const [recovering, setRecovering] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [dirty, setDirty] = useState(false)
@@ -72,15 +76,17 @@ export default function App() {
   function change(next: WorkspaceData, isDirty = true) { dataRef.current = next; dirtyRef.current = isDirty; setWorkspace(next); setDirty(isDirty) }
   function setDocument(document: ConversationSummary | null) { currentRef.current = document; setCurrent(document) }
 
+  async function writeWorkspace(next: WorkspaceData): Promise<void> {
+    const document = currentRef.current ? await saveConversation(currentRef.current, next) : await createConversation('杭州三日慢游', next)
+    setDocument(document)
+    if (dataRef.current === next) { dirtyRef.current = false; setDirty(false) }
+    setHistory(items => [document, ...items.filter(item => item.id !== document.id)])
+  }
+
   async function persist(next: WorkspaceData = dataRef.current): Promise<void> {
     if (!ready) throw new Error('本地服务尚未连接，当前修改还没有保存。请在设置中重新连接。')
     setSaving(true)
-    const operation = queueRef.current.catch(() => undefined).then(async () => {
-      const document = currentRef.current ? await saveConversation(currentRef.current, next) : await createConversation('杭州三日慢游', next)
-      setDocument(document)
-      if (dataRef.current === next) { dirtyRef.current = false; setDirty(false) }
-      setHistory(items => [document, ...items.filter(item => item.id !== document.id)])
-    })
+    const operation = queueRef.current.catch(() => undefined).then(() => writeWorkspace(next))
     queueRef.current = operation
     try { await operation } finally { if (queueRef.current === operation) setSaving(false) }
   }
@@ -104,7 +110,8 @@ export default function App() {
     setLoading(true); setConnectionError('')
     try {
       const connection = await getBackendConnection()
-      const items = await listConversations()
+      const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
+      setRecoveryOptions(damaged)
       setDataDir(connection.dataDir); setHistory(items); setReady(true)
       if (!currentRef.current && !dirty && items.length > 0) {
         const latest = await readConversation(items[0]!.id)
@@ -126,15 +133,15 @@ export default function App() {
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 6500); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [workspace.messages.length, chatOpen])
   useEffect(() => {
-    if (!ready || loading || !dirty || applying) return
+    if (!ready || loading || !dirty || applying || recovering) return
     const timer = window.setTimeout(() => { void persist(workspace).catch(error => notify(describeError(error), true)) }, 900)
     return () => window.clearTimeout(timer)
-  }, [workspace, ready, loading, dirty, applying])
+  }, [workspace, ready, loading, dirty, applying, recovering])
   useEffect(() => {
-    const handler = (event: BeforeUnloadEvent) => { if (dirty || saving) { event.preventDefault(); event.returnValue = '' } }
+    const handler = (event: BeforeUnloadEvent) => { if (dirty || saving || recovering) { event.preventDefault(); event.returnValue = '' } }
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty, saving])
+  }, [dirty, saving, recovering])
 
   function selectDay(value: number) {
     change({ ...dataRef.current, selectedDay: value })
@@ -216,11 +223,45 @@ export default function App() {
       if (path) notify(`已选择 ${path}。下次启动使用新目录，现有文件不会自动迁移。`)
     } catch (error) { notify(describeError(error), true) }
   }
+  async function scanRecovery() {
+    setScanning(true)
+    try {
+      const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
+      setHistory(items); setRecoveryOptions(damaged)
+    } catch (error) { notify(describeError(error), true) }
+    finally { setScanning(false) }
+  }
+  async function restoreConversation(option: RecoveryOption) {
+    if (!option.token) return
+    setRecovering(option.id)
+    try {
+      const operation = queueRef.current.catch(() => undefined).then(async () => {
+        if (currentRef.current?.id !== option.id && dirtyRef.current) await writeWorkspace(dataRef.current)
+        const document = await recoverConversation(option.id, option.token!)
+        if (!isWorkspaceData(document.data)) throw new Error('备份已恢复，但内容与当前界面不兼容。损坏原件已另存保留。')
+        setDocument(document); change(document.data, false)
+      })
+      queueRef.current = operation
+      await operation
+      await scanRecovery()
+      setPanel(null)
+      notify('会话已从备份恢复。损坏原件保留在数据目录的 recovered-originals 文件夹。')
+    } catch (error) { notify(describeError(error), true); await scanRecovery() }
+    finally { setRecovering(null) }
+  }
   function favorite(id: string) { change({ ...dataRef.current, favorites: dataRef.current.favorites.includes(id) ? dataRef.current.favorites.filter(item => item !== id) : [...dataRef.current.favorites, id] }) }
+
+  const recoverySection = <section className="recovery-section"><h3>会话恢复</h3><p>损坏的会话不影响其他历史记录。恢复前会另存损坏原件，备份保持不变。</p>
+    <button className="secondary-button" onClick={() => void scanRecovery()} disabled={!ready || scanning || !!recovering}>{scanning ? '扫描中…' : '扫描本地备份'}</button>
+    {ready && recoveryOptions.length === 0 && <p className="muted-note">未发现损坏会话。</p>}
+    {recoveryOptions.map(option => <div className="recovery-item" key={option.id}><strong>{option.title}</strong><p>{option.message}</p>
+      {option.token && <details><summary>查看可恢复备份</summary><p>备份时间：{new Date(option.backup_updated_at!).toLocaleString('zh-CN')}。恢复后，备份之后的修改可能丢失，损坏原件会另存保留。{current?.id === option.id && dirty ? ' 当前会话尚未保存的修改也会被这份备份替换。' : ''}</p><button className="secondary-button" disabled={!!recovering || saving || installing} onClick={() => void restoreConversation(option)}>{recovering === option.id ? '恢复中…' : '确认恢复备份'}</button></details>}
+    </div>)}
+  </section>
 
   return <div className="app-shell">
     <aside className="sidebar" aria-label="主导航">
-      <button className="brand-mark" aria-label="返回地图首页" onClick={() => { setPanel(null); setZoom(1) }}><Compass size={38} strokeWidth={1.3} /></button>
+      <button className="brand-mark" aria-label="返回地图首页" onClick={() => { setPanel(null); setZoom(1) }}><img src={appIcon} width={42} height={42} alt="" /></button>
       <nav>
         <button className="nav-item" onClick={() => setPanel('new')}><Navigation size={25} /><span>旅程</span></button>
         <button className={`nav-item ${panel === null ? 'active' : ''}`} onClick={() => setPanel(null)} aria-current={panel === null ? 'page' : undefined}><Map size={25} /><span>地图</span></button>
@@ -234,7 +275,7 @@ export default function App() {
       <header className="topbar">
         <strong className="wordmark">SuperTravelAgent</strong><span className="header-divider" /><span className="trip-title">{current?.title ?? '杭州三日慢游'}</span><span className="header-tagline">慢下来，遇见更美的风景</span>
         <div className="trip-meta"><span><CalendarDays size={15} />日期待定</span><span><Users size={15} />2 位成人 · 3 天</span></div>
-        <button className="save-button" disabled={!ready || saving || loading} onClick={() => void persist().then(() => notify('会话与行程已保存到本机。')).catch(error => notify(describeError(error), true))}>{saving ? <LoaderCircle size={18} className="spin" /> : <Save size={18} />}<span>{saving ? '保存中' : '保存行程'}</span></button>
+        <button className="save-button" disabled={!ready || saving || loading || !!recovering} onClick={() => void persist().then(() => notify('会话与行程已保存到本机。')).catch(error => notify(describeError(error), true))}>{saving ? <LoaderCircle size={18} className="spin" /> : <Save size={18} />}<span>{saving ? '保存中' : '保存行程'}</span></button>
       </header>
       <main className="workspace">
         <MapCanvas activities={visibleActivities} selected={selectedActivity?.id ?? ''} zoom={zoom} layers={layers} onSelect={setSelected} />
@@ -258,9 +299,9 @@ export default function App() {
       </main>
     </div>
     {toast && <div className={`toast ${toast.error ? 'toast--error' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.error ? <ShieldCheck size={18} /> : <Check size={18} />}<span>{toast.message}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setToast(null)}><X size={16} /></button></div>}
-    {panel === 'settings' && <Dialog title="设置与更新" onClose={() => { if (!installing) setPanel(null) }}><div className="settings-content"><section><h3>本地数据</h3><p>会话和行程以 JSON 文件保存在本机，应用升级不会替换这些文件。</p><div className="path-field"><FolderOpen size={17} /><span>{dataDir}</span></div><div className="button-row"><button className="secondary-button" onClick={() => void selectDataDirectory()} disabled={!ready || saving}>选择数据目录</button><button className="text-button" onClick={() => void connect()} disabled={loading}>{loading ? '连接中…' : '重新连接服务'}</button></div>{connectionError && <p className="inline-error">{connectionError}</p>}</section><section><h3>客户端更新 <span className="version">v{version}</span></h3><p>发现新版本后由你确认下载，校验通过并保存当前内容后重启更新。</p><button className="secondary-button" onClick={() => void checkUpdate()} disabled={checking || installing}>{checking ? <LoaderCircle size={16} className="spin" /> : <RotateCcw size={16} />}{checking ? '正在检查' : '检查更新'}</button>{update && <div className="update-result">{!update.configured ? <p>更新源尚未配置。发布仓库与签名配置完成后即可检查新版本。</p> : update.version ? <><strong>发现新版本 v{update.version}</strong><p className="release-notes">{update.body || '此版本没有附加更新说明。'}</p><button className="primary-button" onClick={() => void runUpdate()} disabled={installing || !ready}>{installing ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}{installing ? updatePhase === 'installing' ? '校验完成，正在安装并重启…' : progress === null ? '正在下载并校验…' : `下载中 ${Math.round(progress)}%` : '保存并更新'}</button>{installing && <button className="text-button" disabled={updatePhase === 'installing'} onClick={() => void cancelUpdate().catch(error => notify(describeError(error), true))}>取消下载</button>}</> : <p>当前已是最新版本。</p>}</div>}</section><section><h3>模型与工具</h3><p>当前为桌面基础版本。规划 Agent、执行 Agent 和远程 MCP 尚未接入，示例不会触发模型费用。</p></section><details className="attributions"><summary>照片与界面说明</summary><p>西湖照片来自 Wikimedia Commons：DXR（桥畔日落）与 Tyler Valentine（西湖暮色），CC BY-SA 4.0。以裁切方式展示，不能视为特定活动的现场照片。</p><a href="https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg" target="_blank" rel="noreferrer">桥畔日落来源</a><a href="https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg" target="_blank" rel="noreferrer">西湖暮色来源</a><a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a><p>界面遵循用户指定的 SuperTravel-Agent README 概念预览；底图为本项目绘制的示意地图，不用于导航。</p></details></div></Dialog>}
-    {panel === 'history' && <Dialog title="历史旅行" onClose={() => setPanel(null)}><div className="history-list">{history.length === 0 ? <div className="empty-state"><History size={34} /><h3>旅行，从这里留下足迹</h3><p>保存第一份行程后，下次打开就能继续。</p><button className="primary-button" disabled={!ready || saving} onClick={() => void persist().then(() => notify('第一份行程已保存。')).catch(error => notify(describeError(error), true))}>保存当前行程</button></div> : history.map(item => <button className="history-item" key={item.id} disabled={saving} onClick={() => void openHistory(item.id)}><span className="history-icon"><Map size={22} /></span><span><strong>{item.title}</strong><small>{new Date(item.updated_at).toLocaleString('zh-CN')} · 本地会话</small></span>{current?.id === item.id ? <span className="current-label">当前</span> : <ChevronRight size={18} />}</button>)}</div></Dialog>}
-    {panel === 'new' && <Dialog title="开始一段新旅程" onClose={() => setPanel(null)}><div className="new-trip-content"><p>先给这段旅程取个名字。</p><label className="field-label">会话名称<input autoFocus maxLength={80} value={newTitle} onChange={event => setNewTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void newConversation() }} /></label><p className="muted-note">当前创建本地示例会话，沿用杭州三日展示数据；真实需求规划将在后续接入。</p><button className="primary-button" disabled={!ready || !newTitle.trim() || saving} onClick={() => void newConversation()}><Plus size={17} />创建本地会话</button></div></Dialog>}
+    {panel === 'settings' && <Dialog title="设置与更新" onClose={() => { if (!installing && !recovering) setPanel(null) }} busy={!!recovering}><div className="settings-content"><section><h3>本地数据</h3><p>会话和行程以 JSON 文件保存在本机，应用升级不会替换这些文件。</p><div className="path-field"><FolderOpen size={17} /><span>{dataDir}</span></div><div className="button-row"><button className="secondary-button" onClick={() => void selectDataDirectory()} disabled={!ready || saving || !!recovering}>选择数据目录</button><button className="text-button" onClick={() => void connect()} disabled={loading || !!recovering}>{loading ? '连接中…' : '重新连接服务'}</button></div>{connectionError && <p className="inline-error">{connectionError}</p>}</section>{recoverySection}<section><h3>客户端更新 <span className="version">v{version}</span></h3><p>发现新版本后由你确认下载，校验通过并保存当前内容后重启更新。</p><button className="secondary-button" onClick={() => void checkUpdate()} disabled={checking || installing || !!recovering}>{checking ? <LoaderCircle size={16} className="spin" /> : <RotateCcw size={16} />}{checking ? '正在检查' : '检查更新'}</button>{update && <div className="update-result">{!update.configured ? <p>更新源尚未配置。发布仓库与签名配置完成后即可检查新版本。</p> : update.version ? <><strong>发现新版本 v{update.version}</strong><p className="release-notes">{update.body || '此版本没有附加更新说明。'}</p><button className="primary-button" onClick={() => void runUpdate()} disabled={installing || !ready || !!recovering}>{installing ? <LoaderCircle size={16} className="spin" /> : <Download size={16} />}{installing ? updatePhase === 'installing' ? '校验完成，正在安装并重启…' : progress === null ? '正在下载并校验…' : `下载中 ${Math.round(progress)}%` : '保存并更新'}</button>{installing && <button className="text-button" disabled={updatePhase === 'installing'} onClick={() => void cancelUpdate().catch(error => notify(describeError(error), true))}>取消下载</button>}</> : <p>当前已是最新版本。</p>}</div>}</section><section><h3>模型与工具</h3><p>当前为桌面基础版本。规划 Agent、执行 Agent 和远程 MCP 尚未接入，示例不会触发模型费用。</p></section><details className="attributions"><summary>照片与界面说明</summary><p>西湖照片来自 Wikimedia Commons：DXR（桥畔日落）与 Tyler Valentine（西湖暮色），CC BY-SA 4.0。以裁切方式展示，不能视为特定活动的现场照片。</p><a href="https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg" target="_blank" rel="noreferrer">桥畔日落来源</a><a href="https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg" target="_blank" rel="noreferrer">西湖暮色来源</a><a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">CC BY-SA 4.0</a><p>界面遵循用户指定的 SuperTravel-Agent README 概念预览；底图为本项目绘制的示意地图，不用于导航。</p></details></div></Dialog>}
+    {panel === 'history' && <Dialog title="历史旅行" onClose={() => setPanel(null)}><div className="history-list">{recoveryOptions.length > 0 && <button className="recovery-notice" onClick={() => setPanel('settings')}>有 {recoveryOptions.length} 个会话无法读取，前往设置查看恢复选项。</button>}{history.length === 0 ? <div className="empty-state"><History size={34} /><h3>旅行，从这里留下足迹</h3><p>保存第一份行程后，下次打开就能继续。</p><button className="primary-button" disabled={!ready || saving || !!recovering} onClick={() => void persist().then(() => notify('第一份行程已保存。')).catch(error => notify(describeError(error), true))}>保存当前行程</button></div> : history.map(item => <button className="history-item" key={item.id} disabled={saving || !!recovering} onClick={() => void openHistory(item.id)}><span className="history-icon"><Map size={22} /></span><span><strong>{item.title}</strong><small>{new Date(item.updated_at).toLocaleString('zh-CN')} · 本地会话</small></span>{current?.id === item.id ? <span className="current-label">当前</span> : <ChevronRight size={18} />}</button>)}</div></Dialog>}
+    {panel === 'new' && <Dialog title="开始一段新旅程" onClose={() => setPanel(null)}><div className="new-trip-content"><p>先给这段旅程取个名字。</p><label className="field-label">会话名称<input autoFocus maxLength={80} value={newTitle} onChange={event => setNewTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void newConversation() }} /></label><p className="muted-note">当前创建本地示例会话，沿用杭州三日展示数据；真实需求规划将在后续接入。</p><button className="primary-button" disabled={!ready || !newTitle.trim() || saving || !!recovering} onClick={() => void newConversation()}><Plus size={17} />创建本地会话</button></div></Dialog>}
     {panel === 'edit' && <Dialog title="编辑当天行程" onClose={() => setPanel(null)} wide busy={applying}><div className="edit-content">
       <div className="edit-notice"><Pencil size={17} /><span>正在编辑草稿。点击“应用修改”后才会替换已保存行程。</span></div>
       <fieldset className="editor-form" disabled={applying} aria-busy={applying}>
@@ -274,7 +315,7 @@ export default function App() {
           <div className="reorder-buttons"><button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div>
         </div>)}
         <p className="muted-note">本阶段可编辑本地示例；改变地点后不会自动查询新的真实坐标或路线。</p>
-        <div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving} onClick={() => void applyDraft()}><Check size={17} />{applying ? '正在应用…' : '应用修改'}</button></div>
+        <div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving || !!recovering} onClick={() => void applyDraft()}><Check size={17} />{applying ? '正在应用…' : '应用修改'}</button></div>
       </fieldset>
     </div></Dialog>}
     {panel === 'photos' && <Dialog title="旅行中的片刻" onClose={() => setPanel(null)} wide><div className="photo-gallery"><figure><Photo /><figcaption>西湖桥畔的日落 · DXR</figcaption></figure><figure><Photo src={PHOTO_TWO} /><figcaption>西湖暮色 · Tyler Valentine</figcaption></figure><p>风景参考照片，不是当前示例路线的实时实拍。授权及来源见“设置与更新”。</p></div></Dialog>}

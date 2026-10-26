@@ -17,6 +17,23 @@ def signature(version="0.1.0"):
     return base64.b64encode(f"untrusted comment: fixture\nRWQfake\ntrusted comment: timestamp:1\tversion:{version}\nfixture\n".encode()).decode()
 
 class ReleaseTests(unittest.TestCase):
+    def test_native_upgrade_fixture_detects_changed_data(self):
+        spec = importlib.util.spec_from_file_location("native_upgrade", Path(__file__).with_name("smoke-native-update.py"))
+        upgrade = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(upgrade)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = upgrade.make_profile(root / "profile")
+            upgrade.assert_profile(snapshot)
+            conversation = next(path for path in snapshot if path.name != "desktop.json")
+            data = json.loads(conversation.read_text(encoding="utf-8"))["data"]
+            self.assertTrue(data["draft"] and data["messages"] and data["days"])
+            before = upgrade.fingerprint(root)
+            conversation.write_bytes(b"unexpected rewrite")
+            self.assertNotEqual(upgrade.fingerprint(root), before)
+            with self.assertRaises(RuntimeError):
+                upgrade.assert_profile(snapshot)
+
     def make_part(self,root,target,version="0.1.0"):
         _,folder,_,extension=release.TARGETS[target]
         bundle=root/target/"bundle"

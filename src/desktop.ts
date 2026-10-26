@@ -2,6 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { version as packageVersion } from '../package.json';
 
 export interface BackendConnection { baseUrl: string; token: string; dataDir: string }
 export interface UpdateCheck { configured: boolean; version?: string | null; body?: string | null }
@@ -25,7 +26,7 @@ export async function getBackendConnection(): Promise<BackendConnection> {
 }
 
 export async function getAppVersion(): Promise<string> {
-  return isTauri() ? invoke<string>('app_version') : (import.meta.env.VITE_APP_VERSION || '0.1.0');
+  return isTauri() ? invoke<string>('app_version') : (import.meta.env.VITE_APP_VERSION || packageVersion);
 }
 
 export async function checkForUpdate(): Promise<UpdateCheck> {

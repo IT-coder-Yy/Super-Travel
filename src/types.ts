@@ -4,6 +4,7 @@ export type Message = { id: string; role: 'user' | 'assistant'; content: string 
 export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null }
 export type ConversationSummary = { id: string; title: string; revision: number; updated_at: string }
 export type Conversation = ConversationSummary & { data: WorkspaceData }
+export type RecoveryOption = { id: string; title: string; message: string; backup_updated_at: string | null; token: string | null }
 
 export function createExample(): WorkspaceData {
   return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, days: [

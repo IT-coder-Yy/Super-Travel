@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import hmac
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -67,6 +68,19 @@ class ConversationSummary(BaseModel):
     updated_at: AwareDatetime
 
 
+class RecoveryOption(BaseModel):
+    id: UUID
+    title: str
+    message: str
+    backup_updated_at: AwareDatetime | None = None
+    token: str | None = None
+
+
+class RecoveryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    token: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class StoreError(Exception):
     def __init__(self, status: int, code: str, message: str, **extra: Any):
         super().__init__(message)
@@ -95,25 +109,34 @@ class ConversationStore:
     def _path(self, conversation_id: UUID) -> Path:
         return self.conversations / f"{conversation_id}.json"
 
-    def _read(self, conversation_id: UUID) -> tuple[Conversation, bytes]:
-        path = self._path(conversation_id)
+    @staticmethod
+    def _read_bytes(path: Path) -> bytes:
         try:
             if path.is_symlink():
                 raise StoreError(503, "unsafe_file", "会话文件不能是符号链接。")
             with path.open("rb") as handle:
                 raw = handle.read(MAX_BYTES + 1)
             if len(raw) > MAX_BYTES:
-                raise ValueError("oversized document")
+                raise StoreError(503, "corrupt_conversation", "会话文件超过 2 MiB，已保留原件，请手动检查。")
+            return raw
+        except FileNotFoundError as exc:
+            raise StoreError(404, "not_found", "会话不存在。") from exc
+        except OSError as exc:
+            raise StoreError(503, "storage_unavailable", "无法读取本地会话，请检查数据目录。") from exc
+
+    @staticmethod
+    def _validate(conversation_id: UUID, raw: bytes) -> Conversation:
+        try:
             document = Conversation.model_validate_json(raw)
             if document.id != conversation_id:
                 raise ValueError("document ID does not match its filename")
-            return document, raw
-        except FileNotFoundError as exc:
-            raise StoreError(404, "not_found", "会话不存在。") from exc
+            return document
         except (ValidationError, ValueError, RecursionError) as exc:
             raise StoreError(503, "corrupt_conversation", "会话文件损坏或格式不兼容，已保留原件。") from exc
-        except OSError as exc:
-            raise StoreError(503, "storage_unavailable", "无法读取本地会话，请检查数据目录。") from exc
+
+    def _read(self, conversation_id: UUID, path: Path | None = None) -> tuple[Conversation, bytes]:
+        raw = self._read_bytes(path or self._path(conversation_id))
+        return self._validate(conversation_id, raw), raw
 
     @staticmethod
     def _atomic_replace(path: Path, payload: bytes) -> None:
@@ -168,20 +191,83 @@ class ConversationStore:
             document = Conversation(id=current.id, title=payload.title, data=payload.data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
             return self._save(document, previous)
 
-    def summaries(self) -> list[ConversationSummary]:
-        summaries = []
+    def _ids(self) -> list[UUID]:
         try:
             paths = list(self.conversations.glob("*.json"))
         except OSError as exc:
             raise StoreError(503, "storage_unavailable", "无法读取会话目录。") from exc
+        identifiers = []
         for path in paths:
             try:
-                conversation_id = UUID(path.stem)
+                identifiers.append(UUID(path.stem))
             except ValueError:
                 continue
-            document = self.get(conversation_id)
+        return identifiers
+
+    def summaries(self) -> list[ConversationSummary]:
+        summaries = []
+        for conversation_id in self._ids():
+            try:
+                document = self.get(conversation_id)
+            except StoreError:
+                continue
             summaries.append(ConversationSummary(**document.model_dump(exclude={"data"})))
         return sorted(summaries, key=lambda item: item.updated_at, reverse=True)
+
+    def _recovery_state(self, conversation_id: UUID) -> tuple[RecoveryOption, bytes, Conversation | None] | None:
+        option = RecoveryOption(id=conversation_id, title=f"{conversation_id}.json", message="")
+        try:
+            raw = self._read_bytes(self._path(conversation_id))
+        except StoreError as exc:
+            option.message = exc.detail["message"] + " 无法自动恢复。"
+            return option, b"", None
+        try:
+            self._validate(conversation_id, raw)
+            return None
+        except StoreError:
+            pass
+        try:
+            backup, backup_raw = self._read(conversation_id, self.backups / f"{conversation_id}.json")
+        except StoreError:
+            option.message = "会话已损坏，未找到有效备份，无法自动恢复。原文件保持不变。"
+            return option, raw, None
+        option.title = backup.title
+        option.message = "会话已损坏，可从上一份有效备份恢复。"
+        option.backup_updated_at = backup.updated_at
+        option.token = hashlib.sha256(raw + b"\0" + backup_raw).hexdigest()
+        return option, raw, backup
+
+    def recovery_options(self) -> list[RecoveryOption]:
+        options = []
+        for conversation_id in self._ids():
+            with self._lock(conversation_id):
+                state = self._recovery_state(conversation_id)
+                if state is not None:
+                    options.append(state[0])
+        return options
+
+    def recover(self, conversation_id: UUID, token: str) -> Conversation:
+        with self._lock(conversation_id):
+            state = self._recovery_state(conversation_id)
+            if state is None or state[0].token is None or not hmac.compare_digest(state[0].token, token):
+                raise StoreError(409, "recovery_changed", "会话或备份已变化，请重新扫描后再恢复。")
+            _, original, backup = state
+            assert backup is not None
+            now = datetime.now(timezone.utc)
+            # 损坏原件的修订号不可读，新的基线避免旧窗口继续写入原修订号。
+            document = backup.model_copy(update={"revision": max(backup.revision + 1, int(now.timestamp() * 1000)), "updated_at": now})
+            try:
+                archive = self.root / "recovered-originals"
+                if archive.is_symlink():
+                    raise OSError("unsafe archive directory")
+                archive.mkdir(exist_ok=True)
+                self._atomic_replace(archive / f"{conversation_id}-{uuid4()}.json", original)
+            except OSError as exc:
+                raise StoreError(503, "save_failed", "无法保留损坏原件，恢复未执行。") from exc
+            latest = self._recovery_state(conversation_id)
+            if latest is None or latest[0].token != token:
+                raise StoreError(409, "recovery_changed", "会话或备份已变化，请重新扫描后再恢复。")
+            return self._save(document)
 
 
 class LocalAccessMiddleware:
@@ -262,6 +348,14 @@ def create_app(data_dir: Path, token: str) -> FastAPI:
     @app.post("/api/conversations", response_model=Conversation, status_code=201)
     def create_conversation(payload: ConversationInput) -> Conversation:
         return store.create(payload)
+
+    @app.get("/api/conversations/recovery", response_model=list[RecoveryOption])
+    def recovery_options() -> list[RecoveryOption]:
+        return store.recovery_options()
+
+    @app.post("/api/conversations/{conversation_id}/recover", response_model=Conversation)
+    def recover_conversation(conversation_id: UUID, payload: RecoveryInput) -> Conversation:
+        return store.recover(conversation_id, payload.token)
 
     @app.get("/api/conversations/{conversation_id}", response_model=Conversation)
     def get_conversation(conversation_id: UUID) -> Conversation:
