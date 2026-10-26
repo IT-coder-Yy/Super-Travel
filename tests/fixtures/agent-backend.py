@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_MCP_URL"):
+for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_MCP_URL", "AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"):
     os.environ.pop(name, None)
 
 from backend import agent_service, main

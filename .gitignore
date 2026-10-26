@@ -16,3 +16,4 @@ backend/dist/
 test-results/
 playwright-report/
 artifacts/
+tools-service/

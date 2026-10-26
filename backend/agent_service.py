@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agents import AgentSession
 from backend.mcp_client import McpClient
+from backend.external_tools import ExternalTools
 from backend.model import ModelClient, ModelConfig, ModelError
 
 
@@ -31,14 +32,6 @@ class SendMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
-class NoTools:
-    async def list_tools(self):
-        return []
-
-    async def call_tool(self, _name, _arguments):
-        raise ModelError("tools_unconfigured", "开发者工具服务尚未配置，无法查询实时资料。")
-
-
 class AgentService:
     def __init__(self, store, error_type):
         self.store, self.error_type = store, error_type
@@ -49,7 +42,7 @@ class AgentService:
         if key:
             self.model = ModelClient(ModelConfig(self.base_url, key, self.model_name))
         self.tools_url = os.environ.get("STA_MCP_URL", "")
-        self.tools = McpClient(self.tools_url) if self.tools_url else NoTools()
+        self.tools = McpClient(self.tools_url) if self.tools_url else ExternalTools()
         self.sessions: dict[UUID, AgentSession] = {}
         self.turns: dict[UUID, asyncio.Task] = {}
         self.failed_turns: dict[UUID, str] = {}
@@ -58,7 +51,7 @@ class AgentService:
 
     def public_settings(self):
         return {"baseUrl": self.base_url, "model": self.model_name, "hasKey": self.model is not None,
-                "storageAvailable": False, "toolsConfigured": bool(self.tools_url)}
+                "storageAvailable": False, "toolsConfigured": bool(self.tools_url) or getattr(self.tools, "configured", False)}
 
     def read(self, identifier):
         document = self.store.get(identifier)
@@ -247,8 +240,16 @@ class AgentService:
                     raise ModelError("model_check_failed", "模型连接检查失败，请检查模型地址、名称、API Key 与网络。") from None
             return {"connected": True}
 
+        @router.get("/tools/status")
+        async def tool_status():
+            return {"providers": self.tools.status() if isinstance(self.tools, ExternalTools) else []}
+
         @router.post("/tools/check")
         async def check_tools():
+            if isinstance(self.tools, ExternalTools):
+                if not self.tools.configured:
+                    raise self.error_type(409, "tools_unconfigured", "开发者尚未配置外部服务。")
+                return await self.tools.refresh()
             if not self.tools_url:
                 raise self.error_type(409, "tools_unconfigured", "开发者工具服务尚未配置。")
             try:

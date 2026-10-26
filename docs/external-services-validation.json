@@ -1,0 +1,61 @@
+{
+  "checkedAt": "2026-10-26T15:32:19.529124+00:00",
+  "scope": "production ExternalTools; one discovery, up to one Baidu/Serper/XHS query each; no model",
+  "discovery": {
+    "toolCount": 26,
+    "providers": [
+      {
+        "service": "amap",
+        "configured": true,
+        "connection": "connected",
+        "toolCount": 11
+      },
+      {
+        "service": "baidu",
+        "configured": true,
+        "connection": "connected",
+        "toolCount": 11
+      },
+      {
+        "service": "tavily",
+        "configured": true,
+        "connection": "connected",
+        "toolCount": 2
+      },
+      {
+        "service": "serper",
+        "configured": true,
+        "connection": "unchecked",
+        "toolCount": 1
+      },
+      {
+        "service": "xhs",
+        "configured": true,
+        "connection": "unchecked",
+        "toolCount": 1
+      }
+    ]
+  },
+  "calls": [
+    {
+      "tool": "baidu_map_search_places",
+      "called": true,
+      "status": "ok",
+      "resultCount": 10
+    },
+    {
+      "tool": "serper_search",
+      "called": true,
+      "status": "ok",
+      "resultCount": 1
+    },
+    {
+      "tool": "xhs_search_public",
+      "called": true,
+      "status": "ok",
+      "resultCount": 1
+    }
+  ],
+  "logCredentialCheckPassed": true,
+  "capturedLogEntries": 257
+}

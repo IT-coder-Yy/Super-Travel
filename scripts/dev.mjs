@@ -14,11 +14,12 @@ const dataDir = resolve(root, '.local', 'dev-data');
 mkdirSync(dataDir, { recursive: true });
 const token = randomBytes(32).toString('hex');
 const appVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version;
-// Only the explicitly selected model fields enter the client; tool keys stay in the service.
+// Only named development credentials enter Python; none are VITE_ fields or bundled assets.
 const modelEnv = process.env.STA_DEV_ENV_FILE ? parseEnv(readFileSync(process.env.STA_DEV_ENV_FILE, 'utf8')) : {};
+const toolEnv = Object.fromEntries(['AMAP_MAPS_API_KEY', 'BAIDU_MAP_API_KEY', 'TAVILY_API_KEY', 'SERPER_API_KEY'].map(name => [name, modelEnv[name] || process.env[name] || '']));
 const backend = spawn(python, [resolve(root, 'backend/main.py'), '--host', '127.0.0.1', '--port', '0', '--data-dir', dataDir], {
   cwd: root,
-  env: { ...process.env, STA_APP_VERSION: appVersion, STA_MODEL_API_KEY: modelEnv.SAGE_API_KEY || process.env.STA_MODEL_API_KEY || '', STA_MODEL_BASE_URL: modelEnv.SAGE_BASE_URL || process.env.STA_MODEL_BASE_URL || '', STA_MODEL_NAME: modelEnv.SAGE_MODEL_NAME || process.env.STA_MODEL_NAME || '', STA_BACKEND_TOKEN: token, PYTHONUNBUFFERED: '1' },
+  env: { ...process.env, ...toolEnv, STA_APP_VERSION: appVersion, STA_MODEL_API_KEY: modelEnv.SAGE_API_KEY || process.env.STA_MODEL_API_KEY || '', STA_MODEL_BASE_URL: modelEnv.SAGE_BASE_URL || process.env.STA_MODEL_BASE_URL || '', STA_MODEL_NAME: modelEnv.SAGE_MODEL_NAME || process.env.STA_MODEL_NAME || '', STA_BACKEND_TOKEN: token, PYTHONUNBUFFERED: '1' },
   stdio: ['pipe', 'pipe', 'pipe'],
   windowsHide: true,
 });

@@ -1,7 +1,5 @@
 import asyncio
 from contextlib import asynccontextmanager
-from pathlib import Path
-import sys
 import traceback
 
 import httpx2
@@ -11,8 +9,7 @@ from mcp.server import Server
 from mcp.shared.exceptions import MCPError
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
-import mcp_client
+from backend import mcp_client
 
 
 @pytest.mark.parametrize("url", ["http://remote.example/mcp", "https://key@remote.example/mcp", "https://remote.example/mcp?key=secret", "https://remote.example/#secret", "file:///mcp"])

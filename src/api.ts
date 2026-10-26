@@ -36,7 +36,13 @@ export async function deleteModelKey(): Promise<ModelSettings> {
   return getModelSettings()
 }
 export const checkModel = () => request<{ connected: boolean }>('/model/check', { method: 'POST', signal: AbortSignal.timeout(75_000) })
-export const checkTools = () => request<{ connected: boolean; toolCount: number }>('/tools/check', { method: 'POST', signal: AbortSignal.timeout(45_000) })
+export type ToolProviderStatus = {
+  id: string; label: string; kind: 'mcp' | 'api' | 'public_search'; configured: boolean
+  connection: 'unchecked' | 'connected' | 'error'; toolCount: number; message: string
+  lastCall: { status: 'ok' | 'empty' | 'quota' | 'auth' | 'error'; message: string } | null
+}
+export const getToolStatus = (signal?: AbortSignal) => request<{ providers: ToolProviderStatus[] }>('/tools/status', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : undefined })
+export const checkTools = (signal?: AbortSignal) => request<{ connected: boolean; toolCount: number; providers?: ToolProviderStatus[] }>('/tools/check', { method: 'POST', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000) })
 export const createConversation = (title: string, data: WorkspaceData) => request<Conversation>('/conversations', { method: 'POST', body: JSON.stringify({ title, data }) })
 export const saveConversation = (current: ConversationSummary, data: WorkspaceData) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}`, {
   method: 'PUT', body: JSON.stringify({ title: current.title, data, expected_revision: current.revision }),

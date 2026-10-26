@@ -103,6 +103,25 @@ test.describe('双 Agent UI（本地固定假模型/工具，无真实API费用�
     await page.screenshot({ path: info.outputPath('interrupted-after-restart.png') });
   });
 
+  test('外部服务额度不足仍保留配置，用户只填写模型密钥', async ({ page }) => {
+    let checks = 0;
+    page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/tools/check')) checks++; });
+    await page.route('**/api/tools/status', route => route.fulfill({ json: { providers: [
+      { id: 'amap', label: '高德地图', kind: 'mcp', configured: true, connection: 'connected', toolCount: 11, message: '', lastCall: { status: 'quota', message: '配额恢复后可继续。' } },
+      { id: 'xhs', label: '小红书公开内容', kind: 'public_search', configured: true, connection: 'unchecked', toolCount: 1, message: '不包含登录后笔记。', lastCall: null },
+    ] } }));
+    await page.getByRole('button', { name: '设置与更新', exact: true }).click();
+    const services = page.getByRole('list', { name: '外部服务状态' });
+    const amap = services.getByRole('listitem').filter({ hasText: '高德地图' });
+    await expect(amap).toContainText('已配置');
+    await expect(amap).toContainText('额度不足');
+    await expect(services).toContainText('公开搜索索引');
+    await expect(page.locator('input[type="password"]')).toHaveCount(1);
+    expect(checks).toBe(0);
+    await page.getByRole('button', { name: '检查工具服务', exact: true }).click();
+    await expect.poll(() => checks).toBe(1);
+  });
+
   test('模型设置不回显密钥，紧凑窗口可滚动且无横向溢出', async ({ page, localApp }, info) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await configure(page, localApp);
