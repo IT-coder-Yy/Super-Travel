@@ -1,0 +1,70 @@
+{
+  "checkedAt": "2026-10-26T09:37:59.794887+00:00",
+  "scope": "Real AgentSession only; not native desktop/UI end-to-end.",
+  "completed": true,
+  "modelHost": "dashscope.aliyuncs.com",
+  "modelName": "deepseek-v4.1-flash",
+  "routeKind": "started",
+  "finalStatus": "completed",
+  "states": [
+    {
+      "status": "running",
+      "toolCalls": 0,
+      "replans": 0,
+      "completedSteps": 0
+    },
+    {
+      "status": "running",
+      "toolCalls": 0,
+      "replans": 0,
+      "completedSteps": 0
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 0
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 1
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 1
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 2
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 2
+    },
+    {
+      "status": "running",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 3
+    },
+    {
+      "status": "completed",
+      "toolCalls": 1,
+      "replans": 0,
+      "completedSteps": 3
+    }
+  ],
+  "modelCalls": 5,
+  "realToolCalls": 1,
+  "realToolSucceeded": true,
+  "completedSteps": 3,
+  "planSteps": 3
+}
