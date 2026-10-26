@@ -77,7 +77,6 @@ export function StartupIntro({ children }: { children: ReactNode }) {
   const overlayRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const brandRef = useRef<HTMLDivElement>(null)
-  const skipRef = useRef<HTMLButtonElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const restoreFocus = useRef(false)
   const finish = () => {
@@ -125,7 +124,7 @@ export function StartupIntro({ children }: { children: ReactNode }) {
     }
     const onVisibility = () => { if (document.hidden) finish() }
     const observer = new ResizeObserver(fit)
-    observer.observe(overlay); fit(); skipRef.current?.focus({ preventScroll: true })
+    observer.observe(overlay); fit(); overlay.focus({ preventScroll: true })
     frame = requestAnimationFrame(tick)
     // 后台节流或低帧率也不能让开场挡住工作区。
     const timer = window.setTimeout(finish, duration)
@@ -139,13 +138,12 @@ export function StartupIntro({ children }: { children: ReactNode }) {
 
   return <>
     <div ref={contentRef} inert={active}>{children}</div>
-    {active && <div ref={overlayRef} className="startup-intro" role="dialog" aria-modal="true" aria-label="SuperTravel 开场动画" onKeyDown={event => {
-      if (event.key === 'Escape') { event.preventDefault(); finish() }
-      if (event.key === 'Tab') { event.preventDefault(); skipRef.current?.focus() }
+    {active && <div ref={overlayRef} className="startup-intro" role="dialog" aria-modal="true" aria-label="SuperTravel 开场动画" aria-describedby="startup-hint" tabIndex={-1} onKeyDown={event => {
+      event.preventDefault(); event.stopPropagation(); finish()
     }}>
       <canvas ref={canvasRef} aria-hidden="true" />
       <div ref={brandRef} className="startup-brand" aria-hidden="true"><img src={appIcon} width={92} height={92} alt="" /><strong>SuperTravel</strong><span>开启下一程</span></div>
-      <button ref={skipRef} className="startup-skip" onClick={finish}>跳过动画 <span aria-hidden="true">→</span></button>
+      <p id="startup-hint" className="startup-hint">按任意键跳过</p>
     </div>}
   </>
 }

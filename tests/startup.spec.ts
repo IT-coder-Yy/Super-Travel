@@ -6,8 +6,8 @@ test('开场三秒后开放真实工作区，遮罩期间键盘不会进入底�
   await page.goto('/')
   const intro = page.getByRole('dialog', { name: 'SuperTravel 开场动画' })
   await expect(intro).toBeVisible()
-  await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name: '跳过动画' })).toBeFocused()
+  await expect(intro).toBeFocused()
+  await expect(intro.getByRole('button')).toHaveCount(0)
   await expect(page.locator('#root > div').first()).toHaveAttribute('inert', '')
   await expect(intro).toHaveCount(0, { timeout: 4000 })
   await expect(page.getByRole('button', { name: '返回地图首页' })).toBeFocused()
@@ -16,14 +16,16 @@ test('开场三秒后开放真实工作区，遮罩期间键盘不会进入底�
   expect(errors).toEqual([])
 })
 
-test('跳过与 Escape 都立即开放工作区', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: '跳过动画' }).click()
-  await expect(page.locator('.startup-intro')).toHaveCount(0)
-  await page.reload()
-  await expect(page.locator('.startup-intro')).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.locator('.startup-intro')).toHaveCount(0)
+test('字母与功能键均可跳过，按键不进入底层工作区', async ({ page }) => {
+  for (const key of ['x', 'Space', 'Tab', 'Escape']) {
+    await page.goto('/')
+    await expect(page.locator('.startup-intro')).toBeFocused()
+    await page.evaluate(() => document.addEventListener('keydown', () => { document.body.dataset.keyReachedWorkspace = 'yes' }))
+    await page.keyboard.press(key)
+    await expect(page.locator('.startup-intro')).toHaveCount(0)
+    await expect(page.getByLabel('旅行对话输入')).toHaveValue('')
+    await expect(page.locator('body')).not.toHaveAttribute('data-key-reached-workspace', 'yes')
+  }
 })
 
 test('减少动态效果或 Canvas 不可用时不会等待完整开场', async ({ page }) => {

@@ -17,11 +17,13 @@
 | Windows 桌面保存与正常退出 | 通过 | 原生 WebView2 中创建会话、正式行程、聊天与草稿；延迟 PUT 时窗口等待写入再关闭，退出后无本应用后台进程 |
 | macOS arm64/x64 包 | 0.1.0 签名包已发布；0.1.1 构建与桌面启动通过 | 主分支 66c5cbb 的两个原生 runner 实际启动 .app，验证自身后端健康与父进程结束后的清理 |
 | Linux x64 包 | 0.1.0 签名 AppImage 已发布；0.1.1 构建与桌面启动通过 | 主分支 66c5cbb 在 Xvfb 下实际启动 AppImage，验证自身后端健康与父进程结束后的清理 |
-| 0.1.0 → 0.1.1 原生更新 | 待验证 | 不能用只生成清单代替实际安装验证 |
+| 0.1.0 → 0.1.1 原生更新 | macOS arm64/x64、Linux x64 原生更新器验证通过；Windows GUI 更新待发布后验证 | 329c63d 的三平台隔离演练通过旧版启动、篡改包和截断下载拒绝、签名安装、新版启动、配置及 JSON 原样保留；不把原生驱动验证写成旧客户端 GUI 点击流程 |
 
 证据：[v0.1.0 Release](https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.0)、[完整发布流水线](https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40215652664)、[0.1.1 四平台构建及原生启动验证](https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40215693390)。公开 `latest.json` 的四个平台键与版本签名字段已核对。
 
-用户已选择 C2 地图定位图标与 A 点云轨道开场，现已应用到源码。开场时长约 3 秒，可跳过，支持减少动态效果和 Canvas 不可用时直接进入。0.1.1 尚未发布。
+本轮四平台构建与三平台原生更新器证据：[329c63d Actions](https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40287148893)。真实 Wikimedia 照片另行联网检查通过，README 截图来自无图片请求拦截的实际页面。
+
+用户已选择 C2 地图定位图标与 A 点云轨道开场，现已应用到源码。开场时长约 3 秒，按任意键跳过，无跳过按钮；按键不传入底层工作区，支持减少动态效果和 Canvas 不可用时直接进入。0.1.1 尚未发布。
 
 ## 已知边界
 
