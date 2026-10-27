@@ -1,0 +1,82 @@
+{
+  "version": "0.1.2",
+  "commit": "ecf0dc3e3abe85094f4a3902d323a45aa2f2532d",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40524348422",
+  "targets": [
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40524348422/job/122260064952",
+      "build": "passed",
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_startup_and_cleanup": "passed",
+      "native_update": {
+        "platform": "linux-x86_64-appimage",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "backend_tests_passed": 194
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40524348422/job/122260065605",
+      "build": "passed",
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_startup_and_cleanup": "passed",
+      "native_update": {
+        "platform": "darwin-x86_64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "backend_tests_passed": 194
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40524348422/job/122260065627",
+      "build": "passed",
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_gui_update": "Not rerun for 0.1.2; the separate 0.1.0 to 0.1.1 GUI evidence is in docs/native-update/windows-x86_64.json.",
+      "backend_tests_passed": 194
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40524348422/job/122260065686",
+      "build": "passed",
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_startup_and_cleanup": "passed",
+      "native_update": {
+        "platform": "darwin-aarch64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "backend_tests_passed": 194
+    }
+  ]
+}
