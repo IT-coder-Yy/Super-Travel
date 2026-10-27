@@ -232,6 +232,38 @@ def test_existing_trip_can_change_time_without_new_queries_and_preserves_origina
     asyncio.run(run())
 
 
+def test_trip_note_edit_keeps_existing_activity_id_while_new_place_gets_new_id():
+    original = known_trip()
+    original_id = original["days"][0]["activities"][0]["id"]
+    research = TripResearch(Maps(), "杭州", original["days"])
+    changed = submitted()
+    changed["days"][0]["activities"][0]["description"] = "修改后的固定测试备注"
+    added_place = deepcopy(research.places[PLACE_ID])
+    added_place.update(id="baidu:fixture-new", name="新固定测试地点")
+    research.places[added_place["id"]] = added_place
+    changed["days"][0]["activities"].append({"place_id": added_place["id"], "time": "11:00", "duration_minutes": 60, "description": "新活动"})
+    activities = research.submit(changed, TripRequest(destination="杭州", days=1))["days"][0]["activities"]
+    assert activities[0]["id"] == original_id and activities[0]["description"] == "修改后的固定测试备注"
+    assert activities[1]["id"] != original_id
+    assert original["days"][0]["activities"][0]["description"] != activities[0]["description"]
+
+
+def test_trip_completion_shows_summary_without_internal_step_tables_or_coordinates():
+    async def run():
+        def execute(messages):
+            if json.loads(messages[1]["content"])["step"] == "查询地点":
+                return reply("内部地点表：baidu:fixture 120.158 30.264") if messages[-1]["role"] == "tool" else reply(name="search_trip_places", arguments={"query": "断桥"})
+            return reply(name="submit_trip", arguments=submitted())
+        session, _ = session_for(FakeModel([trip_route(steps=["查询地点", "提交行程"])], execute), Maps())
+        await session.chat("杭州一天")
+        state = await finish(session)
+        assert state["status"] == "completed"
+        assert "内部地点表" in state["results"][0]["content"]
+        assert "baidu:" not in state["content"] and "120.158" not in state["content"]
+        assert state["content"] == state["results"][-1]["content"]
+    asyncio.run(run())
+
+
 def test_empty_map_result_cannot_become_successful_trip():
     async def run():
         tools = Maps({"content": [{"type": "text", "text": '{"status":0,"results":[]}'}]})

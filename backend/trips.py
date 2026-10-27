@@ -168,6 +168,7 @@ class TripResearch:
         self.tools, self.destination = tools, destination
         self.map_provider = map_provider
         self.places: dict[str, dict] = {}
+        self.activity_ids: dict[tuple[int, str], str] = {}
         self.unavailable: set[str] = set()
         for day in existing_days or []:
             for activity in day.get("activities", []):
@@ -175,6 +176,9 @@ class TripResearch:
                     place = Place.model_validate(activity.get("place")).model_dump()
                     if map_provider is None or place["provider"] == map_provider:
                         self.places[place["id"]] = place
+                        identifier, number = activity.get("id"), day.get("day")
+                        if isinstance(identifier, str) and 1 <= len(identifier.strip()) <= 200 and type(number) is int and 1 <= number <= 7:
+                            self.activity_ids[number, place["id"]] = identifier.strip()
                 except (ValidationError, TypeError):
                     continue
 
@@ -254,7 +258,7 @@ class TripResearch:
                     raise ValueError("活动时段重叠或跨越当天，请调整时间。")
                 used.add(stop.place_id)
                 end = start + stop.duration_minutes
-                activities.append({"id": str(uuid4()), "title": place["name"], "time": stop.time,
+                activities.append({"id": self.activity_ids.get((day.day, place["id"])) or str(uuid4()), "title": place["name"], "time": stop.time,
                     "duration": f"约 {stop.duration_minutes} 分钟", "description": stop.description,
                     "x": 0, "y": 0, "place": deepcopy(place)})
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})

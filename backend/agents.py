@@ -199,7 +199,8 @@ class AgentSession:
                     if trip and trip_result is None:
                         raise StepFailure("尚未提交有效行程，请调用 submit_trip 提交完整安排。")
                     changes = {"trip_result": trip_result} if trip_result else {}
-                    await self._publish(run_id, status="completed", content="\n\n".join(item["content"] for item in results), error=None, **changes)
+                    content = results[-1]["content"] if trip_result else "\n\n".join(item["content"] for item in results)
+                    await self._publish(run_id, status="completed", content=content, error=None, **changes)
                     return
                 except StepFailure as error:
                     if self._run_id != run_id:

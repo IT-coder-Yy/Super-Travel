@@ -34,6 +34,7 @@ test('真实业务链路的离线回归：生成、地图点、聊天草稿、�
   expect(formal.data.trip.destination).toBe('杭州');
   expect(formal.data.draft).toBeNull();
   expect(formal.data.days[0].activities[0].place.id).toBe('baidu:fixture-park');
+  await page.getByRole('button', { name: '收藏地点', exact: true }).click();
 
   await page.getByLabel('旅行对话输入').fill('调整固定行程，放慢节奏');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
@@ -46,6 +47,9 @@ test('真实业务链路的离线回归：生成、地图点、聊天草稿、�
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.locator('.draft-label')).toHaveCount(0);
   expect((await read()).data.previousTrip.days).toEqual(formal.data.days);
+  const revised = await read();
+  expect(revised.data.days[0].activities[0].id).toBe(formal.data.days[0].activities[0].id);
+  expect(revised.data.favorites).toContain(formal.data.days[0].activities[0].id);
 
   await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
   await page.getByLabel('地点', { exact: true }).first().fill('固定测试花园');
