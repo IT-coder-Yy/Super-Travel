@@ -27,6 +27,8 @@ class FixtureModel:
     async def chat(self, messages, tools=None, **_kwargs):
         if tools and tools[0]["function"]["name"] == "route_request":
             text = json.loads(messages[-1]["content"])["request"]
+            if "固定行程" in text:
+                return reply(name="route_request", arguments={"kind": "plan", "content": "固定测试：查询地点并生成行程。", "steps": ["查询固定地点并提交两天行程"], "trip": {"destination": "杭州", "days": 2}})
             kind, content, steps = "plan", "固定测试计划已开始。", ["查询杭州天气（固定测试工具）"]
             if "你好" in text:
                 kind, content, steps = "answer", "固定测试回复：你好，旅行者。", []
@@ -36,6 +38,17 @@ class FixtureModel:
                 kind, content, steps = "clarification", "你准备查询哪个城市？", []
             return reply(name="route_request", arguments={"kind": kind, "content": content, "steps": steps, "replace_active": False})
         if tools:
+            if any(tool["function"]["name"] == "submit_trip" for tool in tools):
+                context = json.loads(messages[1]["content"])
+                if not context.get("available_places") and messages[-1]["role"] != "tool":
+                    return reply(name="search_trip_places", arguments={"query": "固定测试公园"})
+                description = "固定测试调整：改为慢游。" if "调整" in context["request"] else "固定测试安排，并非实时旅行建议。"
+                return reply(name="submit_trip", arguments={"summary": "固定离线测试行程", "days": [
+                    {"day": day, "title": f"固定测试第{day}天", "subtitle": "固定资料", "activities": [
+                        {"place_id": "baidu:fixture-park", "time": "09:00", "duration_minutes": 60, "description": description},
+                        {"place_id": "baidu:fixture-museum", "time": "11:00", "duration_minutes": 60, "description": "固定测试参观"}
+                    ]} for day in (1, 2)
+                ]})
             if messages[-1]["role"] == "tool":
                 return reply("固定测试查询已完成；这不是实时天气数据。")
             return reply(name="fixture_weather", arguments={"city": "杭州"})
@@ -49,9 +62,16 @@ class FixtureTools:
         self.finished = 0
 
     async def list_tools(self):
-        return [{"name": "fixture_weather", "description": "固定的离线测试天气工具，不提供真实资料", "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": False}}]
+        return [{"name": "fixture_weather", "description": "固定的离线测试天气工具，不提供真实资料", "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": False}},
+                {"name": "baidu_map_search_places", "description": "固定地点数据，不提供真实查询", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "region": {"type": "string"}}}}]
 
     async def call_tool(self, _name, _arguments):
+        if _name == "baidu_map_search_places":
+            return {"isError": False, "content": [{"type": "text", "text": json.dumps({"status": 0, "results": [
+                {"uid": "fixture-park", "name": "固定测试公园", "address": "固定测试公园地址", "city": "杭州市", "location": {"lat": 30.25, "lng": 120.15}},
+                {"uid": "fixture-museum", "name": "固定测试博物馆", "address": "固定测试博物馆地址", "city": "杭州市", "location": {"lat": 30.27, "lng": 120.16}},
+                {"uid": "fixture-garden", "name": "固定测试花园", "address": "固定测试花园地址", "city": "杭州市", "location": {"lat": 30.28, "lng": 120.17}}
+            ]}, ensure_ascii=False)}]}
         gate = asyncio.Event()
         self.pending.append(gate)
         try:
@@ -81,9 +101,9 @@ def diagnosed_replace(path, payload):
         raise
 
 
-def diagnosed_mutate(store, identifier, change):
+def diagnosed_mutate(store, identifier, change, **kwargs):
     try:
-        return original_mutate(store, identifier, change)
+        return original_mutate(store, identifier, change, **kwargs)
     except main.StoreError as error:
         cause = error.__cause__
         storage_errors.append({"type": type(error).__name__, "code": error.detail["code"],

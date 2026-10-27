@@ -29,6 +29,7 @@ if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.agent_service import AgentService
 from backend.model import ModelError
+from backend.trip_api import guard_trip_write, trip_router
 
 
 VERSION = os.environ.get("STA_APP_VERSION", "0.1.0")
@@ -189,6 +190,7 @@ class ConversationStore:
         return document
 
     def create(self, payload: ConversationInput) -> Conversation:
+        guard_trip_write({}, payload.data, StoreError)
         document = Conversation(**payload.model_dump(), id=uuid4(), revision=1, updated_at=datetime.now(timezone.utc))
         with self._lock(document.id):
             return self._save(document)
@@ -203,14 +205,19 @@ class ConversationStore:
             if payload.expected_revision != current.revision:
                 raise StoreError(409, "revision_conflict", "会话已被更新，请重新加载。", current_revision=current.revision)
             data = payload.data
+            guard_trip_write(current.data, data, StoreError)
+            if AgentService._active(current.data) and any(data.get(key) != current.data.get(key) for key in ("days", "draft", "draftTrip")):
+                raise StoreError(409, "trip_busy", "请等待当前任务结束或取消后，再修改行程。")
             if "agentPending" in current.data:
                 data = {**data, **{key: current.data[key] for key in ("messages", "agent", "agentPending") if key in current.data}}
             document = Conversation(id=current.id, title=payload.title, data=data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
             return self._save(document, previous)
 
-    def mutate(self, conversation_id: UUID, change) -> Conversation:
+    def mutate(self, conversation_id: UUID, change, *, expected_revision: int | None = None) -> Conversation:
         with self._lock(conversation_id):
             current, previous = self._read(conversation_id)
+            if expected_revision is not None and current.revision != expected_revision:
+                raise StoreError(409, "revision_conflict", "会话已被更新，请重新加载。", current_revision=current.revision)
             data = current.data
             change(data)
             document = Conversation(id=current.id, title=current.title, data=data, revision=current.revision + 1, updated_at=datetime.now(timezone.utc))
@@ -356,6 +363,7 @@ def create_app(data_dir: Path, token: str) -> FastAPI:
     app.state.store = store
     app.state.agents = agents
     app.include_router(agents.router())
+    app.include_router(trip_router(agents, store, StoreError))
     app.add_middleware(LocalAccessMiddleware, token=token)
     app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
 

@@ -1,6 +1,36 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/local-app';
 import { fileURLToPath } from 'node:url';
+import { createExample } from '../src/types';
+
+test('新会话保持空白，等待用户生成行程而非沿用示例', async ({ page, localApp }, info) => {
+  await localApp.reset();
+  await page.route('https://tile.openstreetmap.org/**', route => route.abort());
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: '保存行程', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '旅程', exact: true }).click();
+  await page.getByLabel('会话名称').fill('空白行程验证');
+  const [created] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/api/conversations') && response.request().method() === 'POST'),
+    page.getByRole('button', { name: '创建本地会话', exact: true }).click(),
+  ]);
+  const document = await created.json();
+  expect(document.data.days).toEqual([]);
+  await expect(page.getByRole('heading', { name: '下一站，想去哪里？' })).toBeVisible();
+  await expect(page.locator('.example-badge')).toHaveCount(0);
+  await expect(page.locator('.photo')).toHaveCount(0);
+  await expect(page.getByLabel('旅行对话输入')).toBeVisible();
+  await page.getByRole('button', { name: '关闭提示', exact: true }).click();
+  for (const width of [1440, 1024]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 960 : 768 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    await expect(page.getByLabel('旅行对话输入')).toBeVisible();
+    await page.screenshot({ path: info.outputPath(`empty-${width}.png`) });
+  }
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '下一站，想去哪里？' })).toBeVisible();
+  expect((await localApp.request(`/conversations/${document.id}`)).data.days).toEqual([]);
+});
 
 async function captureLoadedWorkspace(page: Page, path: string) {
   await expect(page.locator('.photo')).toHaveCount(5);
@@ -28,7 +58,10 @@ test.describe('本地业务回归（固定图片）', () => {
     await page.getByRole('button', { name: '创建本地会话', exact: true }).click();
     await expect(page.locator('.trip-title')).toHaveText(name);
     await expect(page.locator('.draft-label')).toHaveCount(0);
-    await page.getByRole('button', { name: '关闭提示', exact: true }).click();
+    const document = (await localApp.request('/conversations')).find((item: { title: string }) => item.title === name);
+    await localApp.request(`/conversations/${document.id}`, 'PUT', { title: name, expected_revision: document.revision, data: createExample() });
+    await page.reload();
+    await expect(page.locator('.example-badge')).toHaveText('示例行程');
   });
 
 
@@ -80,7 +113,7 @@ test.describe('本地业务回归（固定图片）', () => {
     await expect(page.locator('.activity-description').first()).toHaveText('保存与恢复验证：留半小时休息。');
     await page.getByRole('button', { name: /旅伴对话/ }).click();
     await expect(page.locator('.message--user')).toHaveCount(0);
-    await expect(page.getByText('可以聊天、补充需求或查询旅行资料。地图与行程目前仍为示例。')).toBeVisible();
+    await expect(page.getByText('可以聊天、补充需求或查询旅行资料。当前展示的是示例行程。')).toBeVisible();
 
     await page.getByRole('button', { name: '设置与更新', exact: true }).click();
     await page.getByRole('button', { name: '检查更新', exact: true }).click();
@@ -100,7 +133,7 @@ test.describe('本地业务回归（固定图片）', () => {
   });
 });
 
-test('真实 Wikimedia 照片与截图（显式联网）', async ({ page }, testInfo) => {
+test('真实 Wikimedia 照片与截图（显式联网）', async ({ page, localApp }, testInfo) => {
   test.skip(process.env.STA_LIVE_PHOTOS !== '1', '设置 STA_LIVE_PHOTOS=1 后单独验证远程图片，业务回归使用固定图片。');
   const evidence: { url: string; status?: number; failure?: string }[] = [];
   page.on('response', response => {
@@ -110,6 +143,7 @@ test('真实 Wikimedia 照片与截图（显式联网）', async ({ page }, test
     if (request.url().startsWith('https://thumb.wikimedia.org/')) evidence.push({ url: request.url(), failure: request.failure()?.errorText });
   });
   try {
+    await localApp.request('/conversations', 'POST', { title: '显式照片验证示例', data: createExample() });
     await page.goto('/');
     await expect(page.locator('.startup-intro')).toHaveCount(0);
     await page.locator('.header-tagline').click();

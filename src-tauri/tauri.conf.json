@@ -14,6 +14,7 @@
       {
         "label": "main",
         "title": "SuperTravel · 留一点空白",
+        "userAgent": "SuperTravel/0.1.2 (+https://github.com/IT-coder-Yy/SuperTravelAgent)",
         "width": 1440,
         "height": 960,
         "minWidth": 960,
@@ -21,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: https://*.wikimedia.org; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:1420 ws://127.0.0.1:1420 ws://localhost:1420; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: https://*.wikimedia.org https://tile.openstreetmap.org; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:1420 ws://127.0.0.1:1420 ws://localhost:1420; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "plugins": {

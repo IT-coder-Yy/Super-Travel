@@ -1,0 +1,34 @@
+{
+  "checkedAt": "2026-10-27T14:27:50.949Z",
+  "scope": "real model + production AgentSession/ExternalTools + browser + local JSON",
+  "simulated": false,
+  "destination": "杭州",
+  "days": 1,
+  "verifiedStops": [
+    {
+      "name": "断桥残雪",
+      "provider": "baidu",
+      "coordinateSystem": "wgs84"
+    },
+    {
+      "name": "白堤",
+      "provider": "baidu",
+      "coordinateSystem": "wgs84"
+    },
+    {
+      "name": "雷峰塔景区",
+      "provider": "baidu",
+      "coordinateSystem": "wgs84"
+    }
+  ],
+  "toolCalls": 5,
+  "revisionToolCalls": 0,
+  "generatedAndPersisted": "passed",
+  "realModelRevisionPreservesFormalUntilApplied": "passed",
+  "realMapTilesLoaded": "passed",
+  "placeSelection": "passed",
+  "editApplyAndJsonSave": "passed",
+  "previousVersionPreserved": "passed",
+  "browserReloadRestoresTrip": "passed",
+  "pageErrors": 0
+}

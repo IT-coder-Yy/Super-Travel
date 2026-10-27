@@ -151,6 +151,15 @@ class AgentService:
                 if self.sessions.get(identifier) is not session:
                     return
                 def change(data):
+                    previous = data.get("agent") or {}
+                    result = state.get("trip_result")
+                    if state.get("status") == "completed" and result and not (previous.get("run_id") == state.get("run_id") and previous.get("status") == "completed"):
+                        from backend.trips import validate_result
+                        result = validate_result(result)
+                        if data.get("trip"):
+                            data.update(draft=result["days"], draftTrip=result["trip"])
+                        else:
+                            data.update(days=result["days"], trip=result["trip"], draft=None, draftTrip=None, selectedDay=1)
                     data["agent"] = state
                     if state.get("status") in ("completed", "needs_input") and state.get("content"):
                         self._append(data, f"run-{state['run_id']}-{state['status']}", "assistant", state["content"])
@@ -198,7 +207,10 @@ class AgentService:
 
     async def _turn(self, identifier, payload, session, history):
         try:
-            reply = await session.chat(payload.content, history=history)
+            data = self.store.get(identifier).data
+            meta = data.get("draftTrip") or data.get("trip")
+            trip_context = {"days": data.get("draft") or data.get("days"), "trip": meta} if meta else None
+            reply = await session.chat(payload.content, history=history, trip_context=trip_context)
             if self.turns.get(identifier) is asyncio.current_task() and reply.get("content"):
                 self._write_turn(identifier, payload.message_id, lambda data: self._append(data, "reply-" + str(payload.message_id), "assistant", reply["content"]))
         except asyncio.CancelledError:

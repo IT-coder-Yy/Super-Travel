@@ -48,7 +48,7 @@ class FakeSession:
     def snapshot(self):
         return state("idle", "", run_id=None)
 
-    async def chat(self, text, *, history):
+    async def chat(self, text, *, history, trip_context=None):
         self.calls.append((text, deepcopy(history)))
         self.started.set()
         try:

@@ -1,11 +1,17 @@
-export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number }
+export type Place = { id: string; name: string; address: string; latitude: number; longitude: number; coordinateSystem: 'wgs84'; provider: 'baidu' | 'amap' }
+export type TripMeta = { destination: string; summary: string; generatedAt: string }
+export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place }
 export type TripDay = { day: number; title: string; subtitle: string; activities: Activity[] }
 export type Message = { id: string; role: 'user' | 'assistant'; content: string }
 export type AgentState = { persisted?: boolean; run_id?: string | null; status: 'idle' | 'running' | 'replanning' | 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'interrupted'; plan?: string[]; results?: { step: string; content: string }[]; content?: string; error?: string | null; tool_calls?: number }
-export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null; agent?: AgentState; agentPending?: boolean }
+export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null; trip?: TripMeta; draftTrip?: TripMeta | null; previousTrip?: { days: TripDay[]; trip: TripMeta } | null; agent?: AgentState; agentPending?: boolean }
 export type ConversationSummary = { id: string; title: string; revision: number; updated_at: string }
 export type Conversation = ConversationSummary & { data: WorkspaceData }
 export type RecoveryOption = { id: string; title: string; message: string; backup_updated_at: string | null; token: string | null }
+
+export function createWorkspace(): WorkspaceData {
+  return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, days: [] }
+}
 
 export function createExample(): WorkspaceData {
   return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, days: [
@@ -27,18 +33,34 @@ export function createExample(): WorkspaceData {
   ] }
 }
 
+function validPlace(value: unknown): value is Place {
+  if (!value || typeof value !== 'object') return false
+  const place = value as Partial<Place>
+  return typeof place.id === 'string' && typeof place.name === 'string' && typeof place.address === 'string' &&
+    Number.isFinite(place.latitude) && Math.abs(place.latitude!) <= 90 && Number.isFinite(place.longitude) && Math.abs(place.longitude!) <= 180 &&
+    place.coordinateSystem === 'wgs84' && ['baidu', 'amap'].includes(place.provider ?? '')
+}
+
+function validTrip(value: unknown): value is TripMeta {
+  if (!value || typeof value !== 'object') return false
+  const trip = value as Partial<TripMeta>
+  return typeof trip.destination === 'string' && typeof trip.summary === 'string' && typeof trip.generatedAt === 'string'
+}
+
 function validDays(value: unknown): value is TripDay[] {
-  return Array.isArray(value) && value.length > 0 && value.every(day => day && Number.isInteger(day.day) &&
+  return Array.isArray(value) && value.length <= 7 && value.every(day => day && Number.isInteger(day.day) && day.day >= 1 && day.day <= 7 &&
     typeof day.title === 'string' && typeof day.subtitle === 'string' && Array.isArray(day.activities) &&
     day.activities.every((activity: Activity) => activity && typeof activity.id === 'string' && typeof activity.title === 'string' &&
       typeof activity.time === 'string' && typeof activity.duration === 'string' && typeof activity.description === 'string' &&
-      Number.isFinite(activity.x) && Number.isFinite(activity.y)))
+      Number.isFinite(activity.x) && Number.isFinite(activity.y) && (activity.place === undefined || validPlace(activity.place))))
 }
 
 export function isWorkspaceData(value: unknown): value is WorkspaceData {
   if (!value || typeof value !== 'object') return false
   const data = value as Partial<WorkspaceData>
   return data.schema === 1 && validDays(data.days) && typeof data.selectedDay === 'number' &&
+    (data.trip === undefined || validTrip(data.trip)) && (data.draftTrip == null || validTrip(data.draftTrip)) &&
+    (data.previousTrip == null || validTrip(data.previousTrip.trip) && validDays(data.previousTrip.days)) &&
     (data.agentPending === undefined || typeof data.agentPending === 'boolean') &&
     (data.agent === undefined || !!data.agent && typeof data.agent === 'object' && ['idle', 'running', 'replanning', 'completed', 'failed', 'cancelled', 'needs_input', 'interrupted'].includes(data.agent.status) && (data.agent.plan === undefined || Array.isArray(data.agent.plan) && data.agent.plan.every(item => typeof item === 'string')) && (data.agent.content === undefined || typeof data.agent.content === 'string') && (data.agent.error == null || typeof data.agent.error === 'string')) &&
     Array.isArray(data.favorites) && data.favorites.every(item => typeof item === 'string') &&

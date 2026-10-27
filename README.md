@@ -1,16 +1,16 @@
 # SuperTravelAgent
 
-本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 0.1.1 桌面骨架，主分支正在接入 0.1.2 双 Agent；验收状态见 [M1](docs/VALIDATION.md) 与 [M2](docs/M2.md)。
+本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 0.1.1 桌面骨架，主分支为 0.1.2 开发版；验收状态见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md) 与 [真实行程闭环](docs/M3.md)。
 
-界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。地图和杭州行程仍是明确标注的界面示例；主分支支持真实模型对话、计划和工具调用，真实行程生成与地图尚未贯通。
+界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。主分支支持真实地点行程生成、地图展示、草稿修改和本地保存；新会话从空白开始，旧示例会话仍明确标注。
 
-![当前可运行界面](docs/preview.png)
+![0.1.1 示例工作台参考界面](docs/preview.png)
 
 截图来自本工程实际运行页面。照片：[DXR 的桥畔日落](https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg)、[Tyler Valentine 的西湖暮色](https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg)，按 CC BY-SA 4.0 裁切展示；界面内也保留来源说明。
 
 ## 当前边界
 
-- 冰川白地图工作台、日期与地点切换、浮动日程卡、草稿编辑及应用、聊天记录、历史与设置。
+- 冰川白地图工作台、真实行程生成、动态日期与地点切换、草稿编辑及应用、上一版恢复、聊天记录、历史与设置。
 - 已选 C2 地图定位图标，统一用于客户端、导航与开场；约 3 秒的点云轨道开场按任意键跳过，并适配减少动态效果设置。
 - Python 只监听本机动态端口，使用启动时生成的随机访问令牌；退出桌面客户端时结束服务。
 - 会话按文件保存，默认在操作系统用户数据目录；可选择其他目录，下一次启动生效，原文件不会自动搬动或删除。

@@ -128,7 +128,7 @@ test.describe('双 Agent UI（本地固定假模型/工具，无真实API费用�
     await page.getByRole('button', { name: '测试模型连接', exact: true }).click();
     await expect(page.getByText('模型连接成功。', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '检查工具服务', exact: true }).click();
-    await expect(page.getByText('工具服务已连接，可用工具 1 个。', { exact: true })).toBeVisible();
+    await expect(page.getByText('工具服务已连接，可用工具 2 个。', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: '关闭窗口', exact: true }).click();
     await page.getByRole('button', { name: '设置与更新', exact: true }).click();
     const key = page.getByLabel('模型 API Key', { exact: true });
