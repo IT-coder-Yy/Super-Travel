@@ -137,20 +137,6 @@ def exercise(args) -> dict:
                 result = subprocess.run([str(args.driver), str(probe)], env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=150)
                 print(result.stdout, end="", flush=True)
                 print(result.stderr, end="", file=sys.stderr, flush=True)
-                if result.returncode:
-                    print(f"Windows probe exited with 0x{result.returncode & 0xffffffff:08X}; collecting read-only loader evidence", flush=True)
-                    diagnostics = args.artifact_dir / "windows-update-diagnostics"
-                    diagnostics.mkdir(exist_ok=True)
-                    copies = []
-                    for label, source in (("updater-probe.exe", args.driver), ("candidate-desktop.exe", expected["supertravel-desktop.exe"]),
-                                          ("published-old-desktop.exe", executable)):
-                        copies.append(shutil.copy2(source, diagnostics / label))
-                    try:
-                        diagnostic = subprocess.run([sys.executable, str(ROOT / "scripts/diagnose-windows-loader.py"),
-                                                     str(diagnostics / "windows-loader-report.json"), *map(str, copies)], env=env, timeout=120)
-                        print(f"Loader diagnostic exit code: {diagnostic.returncode}", flush=True)
-                    except (OSError, subprocess.SubprocessError) as error:
-                        print(f"Loader diagnostic could not finish: {type(error).__name__}", flush=True)
                 require_probe_result(result, mode)
                 native_update.assert_profile(snapshot)
                 if mode != "success" and native_update.fingerprint(install) != old_hash:

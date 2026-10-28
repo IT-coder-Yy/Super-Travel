@@ -1,0 +1,42 @@
+{
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40680454596",
+  "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40680454596/job/122790105307",
+  "commit": "5ddf65a69004a7838dc4ad6316f52ceadf7f03e3",
+  "artifact": "windows-update-diagnostics",
+  "probe_exit_status": "0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND)",
+  "inspection": "PE embedded manifest plus actual system DLL export resolution on the Windows runner; does not claim desktop GUI startup.",
+  "executables": [
+    {
+      "name": "updater-probe.exe",
+      "sha256": "2d1427ec944ca7b15652d7d071803d56eb917454b37df2a958921f0ed5ee05e3",
+      "manifest_present": false,
+      "activation_context": "unavailable:1812",
+      "unresolved": [
+        {
+          "name": "comctl32.dll",
+          "missing_entries": [
+            "TaskDialogIndirect"
+          ],
+          "path": "C:\\Windows\\system32\\comctl32.dll",
+          "inspection": "System32 exports without an executable activation context"
+        }
+      ]
+    },
+    {
+      "name": "candidate-desktop.exe",
+      "sha256": "2aca6d8763dc76f1dc3c994bb13f26d75f81e15a994ec3b98f4bc388e1a45630",
+      "manifest_present": true,
+      "activation_context": "active",
+      "unresolved": []
+    },
+    {
+      "name": "published-old-desktop.exe",
+      "sha256": "c09d9c1090b6215a50c39bae394d58782c57fca7d4c56395f0b6d422b88b963f",
+      "manifest_present": true,
+      "activation_context": "active",
+      "unresolved": []
+    }
+  ],
+  "cause": "The CI example did not receive tauri-build Common Controls v6 resources. Its comctl32.dll import TaskDialogIndirect is absent from the System32 legacy library. The candidate and published old desktop executables have activation manifests and resolve all inspected imports.",
+  "fix": "Link the existing tauri-build resource.lib to Windows MSVC examples with cargo:rustc-link-arg-examples. No production desktop import or dependency change."
+}
