@@ -6,7 +6,7 @@
 
 ## 正式 GitHub Release 路径
 
-1. GitHub 仓库配置 secret `TAURI_SIGNING_PRIVATE_KEY`，可选 secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`；配置 vars `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT=https://github.com/<owner>/<repo>/releases/latest/download/latest.json` 和已上线的 `STA_SHARED_TOOLS_URL`。签名私钥只进入受信构建任务，工具凭据只配置在共享服务端，均不进入公开源码或安装包。
+1. GitHub 仓库配置 secret `TAURI_SIGNING_PRIVATE_KEY`，可选 secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`；配置 vars `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT=https://github.com/<owner>/<repo>/releases/latest/download/latest.json`。工具地址 `STA_SHARED_TOOLS_URL` 可选，0.1.2 默认 `http://127.0.0.1:8080`，由开发者自行运行工具服务；本机模式不要求 CI 访问服务，显式 HTTPS 模式仍校验工具目录。此设置不放宽下文更新清单的 HTTPS 规则。签名私钥只进入受信构建任务，工具凭据只配置在服务端，均不进入公开源码或安装包。
 2. `node scripts/set-version.mjs 0.1.0`，提交全部版本文件，再推送 `v0.1.0` tag。CI 在四个原生 runner 打包并测试 Python sidecar。
 3. 全部平台成功后才合并清单、创建草稿 Release、上传全部资产，再发布。普通 main/PR 构建只保留 Actions Artifacts；无签名配置时生成不带更新能力的测试包。
 4. 安装 0.1.0，创建并保存会话；按相同步骤发布 0.1.1。应用检查到更新后由用户启动下载与安装，验证重启后版本、会话内容和数据目录。

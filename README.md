@@ -17,7 +17,7 @@
 - 一份会话对应一个 JSON，保存采用临时文件、校验、备份与原子替换，修订冲突不会直接覆盖。
 - 损坏会话在设置中可扫描有效备份，确认后恢复；原件另存到数据目录的 `recovered-originals/`，其余历史仍可使用。
 - 双 Agent 使用显式 Python 流程；按会话记录计划与进度，支持取消和重启中断，旧结果不能覆盖新任务。模型 Key 通过系统凭据库保存，浏览器开发模式仅放后端内存。
-- 用户只填写模型 URL、模型名和 Key；正式版通过开发者维护的共享服务使用高德、百度、Tavily、Serper、小红书公开搜索，工具密钥不进入安装包，用户无需安装工具网关。开发时仍可本机直连；接入与部署状态见 [外部服务](docs/EXTERNAL_SERVICES.md) 和 [0.1.2 发布检查](docs/M4.md)。
+- 用户只填写模型 URL、模型名和 Key。0.1.2 先用于本机开发，桌面默认连接 `http://127.0.0.1:8080` 的工具服务，需开发者另行启动；设置中可修改服务地址。高德、百度、Tavily、Serper 和小红书公开搜索的凭据由开发者保存在工具服务端，不进入安装包，客户端不填写工具 Key。浏览器开发模式仍兼容直接连接外部服务；接入状态见 [外部服务](docs/EXTERNAL_SERVICES.md) 和 [0.1.2 发布检查](docs/M4.md)。
 - Windows、macOS、Linux 分别在对应的 GitHub Actions 环境构建。安装包有无成功产出、原生升级是否实际验证，见 [验证记录](docs/VALIDATION.md)。
 
 ## 本地开发
@@ -43,6 +43,15 @@ npm run desktop:dev
 
 桌面壳负责启动自己的 Python，不要把 `npm run dev` 与 `desktop:dev` 同时运行。可用 `STA_PYTHON` 显式指定解释器；优先使用本工程的 `backend/.venv`。
 
+桌面使用工具前，开发者需在另一个终端启动工具服务。按 [服务环境模板](deploy/shared-tools/.env.example) 准备自己的 `.local/tools.env`，仅填写四项工具凭据，然后执行：
+
+```powershell
+$env:STA_DEV_ENV_FILE = ".local/tools.env"
+npm run tools:dev
+```
+
+服务默认监听 `127.0.0.1:8080`；可用 `STA_TOOLS_PORT` 改端口，并在客户端设置中填写对应地址。模型 Key 留在客户端模型设置中，不放进工具服务环境文件。当前没有已上线的公共工具服务，安装客户端不会自动启动这项服务；详细说明见 [工具服务](deploy/shared-tools/README.md)。
+
 ## 检查与打包
 
 ```powershell
@@ -62,7 +71,7 @@ npm run desktop:build
 公开仓库：<https://github.com/IT-coder-Yy/SuperTravelAgent>。
 
 - GitHub Actions 构建 Windows x64、macOS arm64/x64、Linux x64。
-- 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT`、`STA_SHARED_TOOLS_URL` 变量。共享工具地址必须已上线，四项工具凭据只配置在该服务的运行环境中。
+- 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT` 变量。`STA_SHARED_TOOLS_URL` 可选，默认 `http://127.0.0.1:8080`；本机模式的 tag 构建不要求 CI 运行工具服务。若显式配置 HTTPS 服务，发布前仍检查工具目录与凭据配置状态。仅允许 HTTPS 或回环 HTTP 地址，不允许 URL 凭据、查询参数和片段；四项工具凭据始终只放在服务运行环境中。
 - 私钥不写入源码或客户端；本地生成的私钥仅存放在被 Git 忽略的 `.local/keys/`，请独立备份。丢失私钥会影响已安装版本的后续更新。
 - 更新流程：检查新版本 → 用户同意 → 保存当前会话/草稿 → 下载与验签 → 关闭 Python → 安装并重启。
 - 下载可尝试公开 GitHub 镜像，失败回 GitHub 原始资产；镜像与原始下载都必须经过同一公钥验签。镜像不用于发送模型 Key 或本地服务令牌。
@@ -78,8 +87,8 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 | `backend/` | Python 服务、JSON 存储与测试 |
 | `src-tauri/` | Rust 桌面生命周期、更新、用户数据目录 |
 | `scripts/` | 开发、sidecar 构建、发布清单与检查脚本 |
-| `deploy/shared-tools/` | 共享工具服务部署，用户无需自行安装 |
+| `deploy/shared-tools/` | 开发者运行的工具服务，本机为默认方式，也可选 HTTPS 部署 |
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 
-真实行程生成、地图展示、修改和保存已完成本机联调，验证范围见 [M3](docs/M3.md)。共享工具服务实现已补齐，正式部署地址尚待确定；0.1.2 发布与 Windows 升级验收进度见 [M4](docs/M4.md)。
+真实行程生成、地图展示、修改和保存已完成本机联调，验证范围见 [M3](docs/M3.md)。0.1.2 采用本机工具服务继续开发，公网部署不是本次发布前提；发布与 Windows 升级验收进度见 [M4](docs/M4.md)。

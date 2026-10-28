@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import os
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from backend.model import ModelClient, ModelConfig, ModelError
 
 
 SAVE_ERROR = "本次对话或进度未能完整保存，请检查本地数据目录。已有文件已保留。"
+DEFAULT_TOOLS_URL = "http://127.0.0.1:8080"
 
 
 class ConfigureModel(BaseModel):
@@ -25,6 +27,11 @@ class ConfigureModel(BaseModel):
     base_url: str = Field(max_length=2048)
     model: str = Field(max_length=200)
     api_key: str | None = Field(default=None, max_length=8192, repr=False)
+
+
+class ConfigureTools(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+    base_url: str = Field(min_length=1, max_length=2048)
 
 
 class SendMessage(BaseModel):
@@ -42,14 +49,77 @@ class AgentService:
         key = os.environ.get("STA_MODEL_API_KEY", "")
         if key:
             self.model = ModelClient(ModelConfig(self.base_url, key, self.model_name))
-        self.tools_url = os.environ.get("STA_MCP_URL", "")
-        shared_url = os.environ.get("STA_SHARED_TOOLS_URL", "")
-        self.tools = McpClient(self.tools_url) if self.tools_url else SharedTools(shared_url) if shared_url else ExternalTools()
+        self.tools_url, self.tools_base_url, self.tools_mode = "", DEFAULT_TOOLS_URL, "shared"
+        self.tools_settings_error = None
+        self.tools_settings_path = store.root / "tools.json" if store is not None else None
+        self.tools = self._initial_tools()
         self.sessions: dict[UUID, AgentSession] = {}
         self.turns: dict[UUID, asyncio.Task] = {}
         self.failed_turns: dict[UUID, str] = {}
         self.configuration_lock = asyncio.Lock()
         self.closed = False
+
+    def _initial_tools(self):
+        try:
+            path = self.tools_settings_path
+            if path is not None and path.exists():
+                if path.is_symlink():
+                    raise ValueError
+                with path.open("rb") as handle:
+                    raw = handle.read(4097)
+                if len(raw) > 4096:
+                    raise ValueError
+                tools = SharedTools(ConfigureTools.model_validate_json(raw).base_url)
+            elif url := os.environ.get("STA_MCP_URL", ""):
+                tools = McpClient(url)
+                self.tools_url, self.tools_base_url, self.tools_mode = tools.url, tools.url, "mcp"
+                return tools
+            elif url := os.environ.get("STA_SHARED_TOOLS_URL", ""):
+                tools = SharedTools(url)
+            else:
+                direct = ExternalTools()
+                if direct.configured:
+                    self.tools_mode = "direct"
+                    return direct
+                tools = SharedTools(DEFAULT_TOOLS_URL)
+            self.tools_base_url = tools.url
+            return tools
+        except (OSError, ValueError, ToolError):
+            self.tools_settings_error = "工具服务配置无效或无法读取，原文件已保留。请在设置中重新保存有效地址。"
+            return SharedTools(DEFAULT_TOOLS_URL)
+
+    def public_tools_settings(self):
+        settings = {"baseUrl": self.tools_base_url, "mode": self.tools_mode}
+        if self.tools_settings_error:
+            settings["error"] = self.tools_settings_error
+        return settings
+
+    async def configure_tools(self, payload: ConfigureTools):
+        async with self.configuration_lock:
+            if self.closed:
+                raise ModelError("service_closed", "本地服务正在关闭，请重启应用。")
+            try:
+                candidate = SharedTools(payload.base_url)
+            except ToolError as error:
+                raise ModelError(error.code, error.message) from None
+            if self.store is None or self.tools_settings_path is None:
+                raise ModelError("tools_storage_unavailable", "当前运行没有本地数据目录，无法保存工具服务地址。")
+            path = self.tools_settings_path
+            encoded = json.dumps({"base_url": candidate.url}, ensure_ascii=False, indent=2).encode("utf-8")
+            try:
+                if path.exists():
+                    self.store._atomic_replace(path.with_suffix(".json.previous"), self.store._read_bytes(path))
+                self.store._atomic_replace(path, encoded)
+            except (OSError, self.error_type):
+                raise ModelError("tools_save_failed", "工具服务地址未完整保存，当前连接保持不变，原配置或备份已保留。请检查数据目录。") from None
+            self.tools, self.tools_base_url, self.tools_mode = candidate, candidate.url, "shared"
+            self.tools_url, self.tools_settings_error = "", None
+            try:
+                await self._retire(set(self.turns) | set(self.sessions))
+            except Exception:
+                # Ownership has already been invalidated and old tasks cancelled by _retire.
+                raise ModelError("tools_switch_incomplete", "工具地址已保存，旧任务已停止，但任务状态未能完整保存；请重新打开会话。") from None
+            return self.public_tools_settings()
 
     def public_settings(self):
         return {"baseUrl": self.base_url, "model": self.model_name, "hasKey": self.model is not None,
@@ -234,6 +304,14 @@ class AgentService:
 
     def router(self):
         router = APIRouter(prefix="/api")
+
+        @router.get("/tools/settings")
+        async def tools_settings():
+            return self.public_tools_settings()
+
+        @router.post("/tools/configure")
+        async def configure_tools(payload: ConfigureTools):
+            return await self.configure_tools(payload)
 
         @router.get("/model/settings")
         async def settings():

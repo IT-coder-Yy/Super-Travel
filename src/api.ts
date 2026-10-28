@@ -39,6 +39,9 @@ export async function deleteModelKey(): Promise<ModelSettings> {
   return getModelSettings()
 }
 export const checkModel = () => request<{ connected: boolean }>('/model/check', { method: 'POST', signal: AbortSignal.timeout(75_000) })
+export type ToolSettings = { baseUrl: string; mode: 'shared' | 'direct' | 'mcp'; error?: string }
+export const getToolSettings = (signal?: AbortSignal) => request<ToolSettings>('/tools/settings', { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : undefined })
+export const saveToolSettings = (baseUrl: string, signal?: AbortSignal) => request<ToolSettings>('/tools/configure', { method: 'POST', body: JSON.stringify({ base_url: baseUrl }), signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : undefined })
 export type ToolProviderStatus = {
   id: string; label: string; kind: 'mcp' | 'api' | 'public_search'; configured: boolean
   connection: 'unchecked' | 'connected' | 'error'; toolCount: number; message: string

@@ -15,7 +15,9 @@ PROVIDERS = [{"id": "baidu", "label": "百度地图", "kind": "mcp", "configured
 TOOL = {"name": "baidu_map_search_places", "description": "地点查询", "inputSchema": {"type": "object"}}
 
 
-@pytest.mark.parametrize("url", ["http://example.test", "https://secret@example.test", "https://example.test/?key=secret", "https://example.test/#secret", "not a url"])
+@pytest.mark.parametrize("url", ["http://example.test", "https://secret@example.test", "https://example.test/?key=secret", "https://example.test/#secret", "not a url",
+    "https://example.test?", "https://example.test#", "https://example.test/a\\b", "https://example.test/\x00", "https://example.test/\x7f",
+    "https://example.test/" + "路" * 300])
 def test_relay_requires_clean_https_address(url):
     with pytest.raises(ToolError):
         SharedTools(url)
@@ -82,8 +84,13 @@ def test_redirects_unknown_tools_and_oversized_responses_are_rejected():
 
 
 def test_configuration_selects_shared_service_without_reading_provider_credentials(monkeypatch):
-    for name in ("STA_MODEL_API_KEY", "STA_MCP_URL", "STA_SHARED_TOOLS_URL"):
+    from backend.external_tools import KEY_NAMES
+    for name in ("STA_MODEL_API_KEY", "STA_MCP_URL", "STA_SHARED_TOOLS_URL", *KEY_NAMES):
         monkeypatch.delenv(name, raising=False)
+    default = agent_service.AgentService(None, None)
+    assert isinstance(default.tools, SharedTools)
+    assert default.public_tools_settings() == {"baseUrl": "http://127.0.0.1:8080", "mode": "shared"}
+    monkeypatch.setenv("BAIDU_MAP_API_KEY", "local-fixture-key")
     assert isinstance(agent_service.AgentService(None, None).tools, ExternalTools)
     monkeypatch.setenv("STA_SHARED_TOOLS_URL", "https://relay.example.test")
     service = agent_service.AgentService(None, None)

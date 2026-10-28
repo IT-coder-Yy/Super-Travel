@@ -371,6 +371,7 @@ def test_check_endpoints_are_explicit_and_sanitize_provider_errors(app):
             model.error = RuntimeError(f"Authorization: Bearer {SECRET}")
             failed = await client.post("/api/model/check")
             assert failed.status_code == 502 and SECRET not in failed.text
+            app.state.agents.tools = agent_service.ExternalTools({})
             assert (await client.post("/api/tools/check")).status_code == 409
             app.state.agents.tools_url = "https://tools.example/mcp"
             app.state.agents.tools = FakeTools()

@@ -1,8 +1,21 @@
-# 共享工具凭据服务
+# 工具凭据服务
 
-此服务只代理已有只读工具，复用 `ExternalTools` 中的官方 MCP/API 连接。四项共享密钥仅从服务端环境变量读取；客户端只配置服务 HTTPS 地址，不接收密钥。模型请求和本地会话不会经过本服务，只发送工具名称及查询参数。
+此服务只代理已有只读工具，复用 `ExternalTools` 中的官方 MCP/API 连接。四项工具密钥仅从服务端环境变量读取；客户端只配置服务地址，不接收密钥。模型请求和本地会话不会经过本服务，只发送工具名称及查询参数。
 
-## 部署
+## 本机开发（0.1.2 默认方式）
+
+桌面默认连接 `http://127.0.0.1:8080`，工具服务需要开发者另行启动，不随安装包自动运行。安装项目依赖后，在仓库根目录准备自己的环境文件（字段见 [.env.example](.env.example)），再执行：
+
+```powershell
+$env:STA_DEV_ENV_FILE = ".local/tools.env"
+npm run tools:dev
+```
+
+macOS/Linux 可使用 `STA_DEV_ENV_FILE=.local/tools.env npm run tools:dev`。启动脚本只从该文件加载 `AMAP_MAPS_API_KEY`、`BAIDU_MAP_API_KEY`、`TAVILY_API_KEY`、`SERPER_API_KEY` 四项工具凭据，不加载模型 Key；真实环境文件不要提交到 Git。服务默认只监听 `127.0.0.1:8080`，端口可用 `STA_TOOLS_PORT` 修改。客户端设置中可填写对应服务地址，仅允许 HTTPS 或回环 HTTP，不能包含用户名、密码、查询参数或片段。
+
+当前没有已上线的公共服务，本机开发和发布不会自动部署服务器。本机模式的正式 tag 构建无需运行或访问这项工具服务；显式使用 HTTPS 服务时，CI 仍检查目录中的凭据状态和地点工具。`GET /healthz` 只用于进程健康检查；验证工具可用性仍需目录和真实只读查询。
+
+## 可选 Docker / HTTPS 部署
 
 在仓库根目录执行：
 
@@ -16,7 +29,7 @@ docker run -d --name supertravel-tools --restart unless-stopped \
 
 环境文件字段见 `.env.example`。真实文件由运营方保管，不进入镜像、Git、安装包或日志。专用 `Dockerfile.dockerignore` 在放行父目录后重新排除其全部内容，再逐文件放行四个适配器/服务源码、`requirements.txt` 和两个 Docker 构建文件，避免父目录规则连带包含 `.venv`、`.env` 或用户数据；`.local` 与 Git 也被排除。规则遵循 [Docker 的顺序匹配语义](https://docs.docker.com/build/concepts/context/#dockerignore-files)。容器只复制工具适配器及服务模块，不包含模型配置和会话模块；以非 root 用户运行。
 
-公网必须通过稳定的 HTTPS 反向代理访问。默认关闭代理请求头信任，此时限额按连接到服务的实际 IP 统计；放在反向代理后时，需要在部署命令显式使用 `--proxy-headers --forwarded-allow-ips <可信代理IP>` 替代 `--no-proxy-headers`，同时由代理删除客户端提供的转发头并重新填写。不能使用任意来源 `*`。若全部请求被统计为代理 IP，会共同受到单 IP 限额。
+以上 Docker 命令也只暴露本机端口；当前本机开发不需要 Docker。未来若部署公网服务，必须通过稳定的 HTTPS 反向代理访问，再在客户端设置或构建变量 `STA_SHARED_TOOLS_URL` 中填写地址。默认关闭代理请求头信任，此时限额按连接到服务的实际 IP 统计；放在反向代理后时，需要在部署命令显式使用 `--proxy-headers --forwarded-allow-ips <可信代理IP>` 替代 `--no-proxy-headers`，同时由代理删除客户端提供的转发头并重新填写。不能使用任意来源 `*`。若全部请求被统计为代理 IP，会共同受到单 IP 限额。
 
 HTTP 健康检查使用 `GET /healthz`。它不查询上游，不能作为工具凭据可用性的证明。上线时还需检查 `GET /v1/tools`，并完成至少一次真实只读查询。项目不自动把本机 `.env` 上传到任何平台。
 

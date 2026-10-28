@@ -42,7 +42,8 @@ class SharedTools:
                 except ValueError:
                     pass
             valid = parsed.host and (parsed.scheme == "https" or parsed.scheme == "http" and local)
-            valid = valid and len(url) <= 2048 and not (parsed.userinfo or parsed.query or parsed.fragment or any(c.isspace() for c in url))
+            valid = valid and len(url) <= 2048 and len(str(parsed)) <= 2048 and not (parsed.userinfo or parsed.query or parsed.fragment
+                or any(c in "?#\\" or c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url))
         except (httpx.InvalidURL, TypeError, ValueError):
             valid = False
         if not valid:

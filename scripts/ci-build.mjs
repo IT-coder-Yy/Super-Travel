@@ -10,6 +10,7 @@ const signed = Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY && process.env.STA_
 if (release && (!signed || process.env.GITHUB_REF_NAME !== `v${version}`)) throw new Error('Tag release requires matching package version, signing secret, public key and endpoint.');
 const env = { ...process.env };
 env.STA_SHARED_TOOLS_URL = sharedToolsUrl(env);
+// Loopback mode needs no running service in CI; explicit HTTPS still checks its tool directory.
 if (release) await verifySharedTools(env.STA_SHARED_TOOLS_URL);
 if (!signed) { delete env.STA_UPDATER_PUBLIC_KEY; delete env.STA_UPDATE_ENDPOINT; }
 function run(command,args) {
