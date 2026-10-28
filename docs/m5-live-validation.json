@@ -1,0 +1,101 @@
+{
+  "checkedAt": "2026-10-28T14:16:52.136779+00:00",
+  "simulated": false,
+  "scope": "Real model + local HTTP relay + official Baidu MCP + production API + isolated JSON; not native GUI",
+  "cases": [
+    {
+      "days": 1,
+      "destination": "杭州",
+      "passed": true,
+      "toolCalls": 3,
+      "replans": 0,
+      "verifiedPlaces": 2,
+      "verifiedRoutes": 1,
+      "unknownRoutes": 0,
+      "plannerSummary": true,
+      "draftIsolation": true,
+      "editApply": true,
+      "jsonSave": true,
+      "previousVersion": true,
+      "modelCalls": {
+        "planner": 1,
+        "executor": 6,
+        "summary": 1
+      },
+      "restartRecovery": true
+    },
+    {
+      "days": 3,
+      "destination": "成都",
+      "passed": true,
+      "toolCalls": 11,
+      "replans": 1,
+      "verifiedPlaces": 6,
+      "verifiedRoutes": 3,
+      "unknownRoutes": 0,
+      "plannerSummary": true,
+      "draftIsolation": true,
+      "editApply": true,
+      "jsonSave": true,
+      "previousVersion": true,
+      "modelCalls": {
+        "planner": 2,
+        "executor": 9,
+        "summary": 1
+      },
+      "restartRecovery": true
+    },
+    {
+      "days": 7,
+      "destination": "北京",
+      "passed": true,
+      "transitions": [
+        {
+          "status": "running",
+          "toolCalls": 0,
+          "error": ""
+        },
+        {
+          "status": "completed",
+          "toolCalls": 27,
+          "error": ""
+        }
+      ],
+      "toolCalls": 27,
+      "replans": 0,
+      "verifiedPlaces": 14,
+      "verifiedRoutes": 7,
+      "unknownRoutes": 0,
+      "plannerSummary": true,
+      "draftIsolation": true,
+      "editApply": true,
+      "jsonSave": true,
+      "previousVersion": true,
+      "modelCalls": {
+        "planner": 1,
+        "executor": 21,
+        "summary": 1
+      },
+      "restartRecovery": true
+    }
+  ],
+  "firstSevenDayAttempt": {
+    "days": 7,
+    "destination": "北京",
+    "passed": false,
+    "error": "agent_failed",
+    "modelCalls": {
+      "planner": 3,
+      "executor": 14,
+      "summary": 0
+    }
+  },
+  "fix": "Reduce model-facing places to ID/name/address/provider; group multi-day work into one or two days per step.",
+  "backendTests": 265,
+  "businessUiTestsPassed": 16,
+  "unrelatedLivePhotoTestSkipped": 1,
+  "platformChecksPassed": 23,
+  "frontendBuild": "passed",
+  "nativeBuild": "pending",
+  "releasePublished": false
+}

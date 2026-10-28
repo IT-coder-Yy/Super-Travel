@@ -5,6 +5,8 @@ import { applyTripDraft, cancelAgent, createConversation, listConversations, lis
 import { cancelUpdate, checkForUpdate, chooseDataDirectory, getAppVersion, getBackendConnection, installUpdate, onBeforeClose, type UpdateCheck, type UpdatePhase } from './desktop'
 import { MapCanvas } from './components/MapCanvas'
 import { RealMap } from './components/RealMap'
+import { TripLeg } from './components/TripLeg'
+import { clearInvalidRoutes, formatCost, knownCosts, routeDetails } from './tripDetails'
 import { ModelSettings } from './components/ModelSettings'
 import appIcon from './assets/app-icon.svg'
 import { createWorkspace, isWorkspaceData, type Activity, type ConversationSummary, type RecoveryOption, type WorkspaceData } from './types'
@@ -79,6 +81,8 @@ export default function App() {
   const selectedActivity = days.flatMap(item => item.activities).find(item => item.id === selected) ?? visibleActivities[0] ?? null
   const selectedIndex = visibleActivities.findIndex(item => item.id === selectedActivity?.id)
   const agentWorking = !!workspace.agentPending || ['running', 'replanning'].includes(workspace.agent?.status ?? '')
+  const costSummary = knownCosts(days)
+  const routeConflict = trip ? days.flatMap(item => item.activities.map((activity, index) => routeDetails(item.activities[index - 1], activity, trip.transportMode ?? 'walking')?.conflict)).find(Boolean) : undefined
 
   function notify(message: string, error = false) { setToast({ message, error }) }
   function resetMap() { setZoom(1); setMapReset(value => value + 1) }
@@ -186,7 +190,8 @@ export default function App() {
   }
   function editActivity(id: string, patch: Partial<Activity>) {
     const draft = structuredClone(dataRef.current.draft ?? dataRef.current.days)
-    for (const tripDay of draft) tripDay.activities = tripDay.activities.map(activity => activity.id === id ? { ...activity, ...patch, ...(patch.title !== undefined && patch.title !== activity.title ? { place: undefined } : {}) } : activity)
+    for (const tripDay of draft) tripDay.activities = tripDay.activities.map(activity => activity.id === id ? { ...activity, ...patch, ...(patch.title !== undefined && patch.title !== activity.title ? { place: undefined, cost: undefined } : {}) } : activity)
+    clearInvalidRoutes(draft)
     change({ ...dataRef.current, draft })
   }
   function moveActivity(id: string, delta: number) {
@@ -197,11 +202,13 @@ export default function App() {
     if (index + delta < 0 || index + delta >= targetDay.activities.length) return
     const item = targetDay.activities.splice(index, 1)[0]!
     targetDay.activities.splice(index + delta, 0, item)
+    clearInvalidRoutes(draft)
     change({ ...dataRef.current, draft })
   }
   async function applyDraft() {
     const draft = dataRef.current.draft
     if (!draft || agentWorking || applying || locating) return
+    if (routeConflict) { notify(routeConflict, true); return }
     if (draft.some(item => item.activities.some(activity => !activity.title.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(activity.time)))) {
       notify('请填写活动名称和有效的时间（例如 09:30）。', true); return
     }
@@ -366,8 +373,9 @@ export default function App() {
         <div className="map-tools" aria-label="地图工具"><button className={`tool-layer ${layers ? 'is-on' : ''}`} onClick={() => setLayers(!layers)} aria-pressed={layers} aria-label="切换地图图层"><Layers size={23} /><span>标注</span></button><div className="zoom-tools"><button onClick={() => setZoom(value => Math.min(1.6, +(value + .15).toFixed(2)))} disabled={zoom >= 1.6} aria-label="放大地图"><Plus size={23} /></button><button onClick={() => setZoom(value => Math.max(.85, +(value - .15).toFixed(2)))} disabled={zoom <= .85} aria-label="缩小地图"><Minus size={23} /></button><button onClick={resetMap} aria-label="重置地图视角"><Navigation size={21} /></button></div></div>
         {day && <section className="itinerary-card" aria-label="当日行程">
           <div className={`day-cover ${isExample ? '' : 'day-cover--real'}`}>{isExample && <><Photo /><div className="day-cover-shade" /></>}<div className="day-cover-copy"><h2>{day.title}</h2><p>第 {day.day} 天 · {day.subtitle}</p></div>{isExample && <span className="example-badge">示例行程</span>}</div>
-          <div className="activities">{day.activities.map((activity, index) => <button className={`activity ${selectedActivity?.id === activity.id ? 'selected' : ''}`} key={activity.id} onClick={() => setSelected(activity.id)}><span className="step-number">{index + 1}</span><span className="activity-copy"><span className="activity-heading"><time>{activity.time}</time><strong>{activity.title}</strong></span><span className="activity-duration"><Clock3 size={13} />{activity.duration}</span><span className="activity-description">{activity.description}</span>{trip && !activity.place && <span className="location-pending">地点已改，等待重新定位</span>}</span>{isExample && <Photo className={`activity-thumb thumb-${index}`} src={index === 1 ? PHOTO_TWO : PHOTO} />}</button>)}</div>
+          <div className="activities">{day.activities.map((activity, index) => <button className={`activity ${selectedActivity?.id === activity.id ? 'selected' : ''}`} key={activity.id} onClick={() => setSelected(activity.id)}><span className="step-number">{index + 1}</span><span className="activity-copy"><span className="activity-heading"><time>{activity.time}</time><strong>{activity.title}</strong></span><span className="activity-duration"><Clock3 size={13} />{activity.duration}</span><span className="activity-description">{activity.description}</span>{trip && <><span className="activity-cost">{activity.cost ? `${formatCost(activity.cost.amountFen)} · 用户填写` : '活动费用未知'}</span><TripLeg previous={day.activities[index - 1]} activity={activity} mode={trip.transportMode ?? 'walking'} /></>}{trip && !activity.place && <span className="location-pending">地点已改，等待重新定位</span>}</span>{isExample && <Photo className={`activity-thumb thumb-${index}`} src={index === 1 ? PHOTO_TWO : PHOTO} />}</button>)}</div>
           <div className="itinerary-summary"><MapPin size={18} /><span>{day.activities.length} 个地点 · 建议安排</span>{workspace.draft && <span className="draft-label">修改草稿</span>}</div>
+          {trip && <p className="trip-cost-summary" aria-label="行程费用">已知费用小计 <strong>{formatCost(costSummary.amountFen)}</strong><span>{costSummary.unknown ? `另有 ${costSummary.unknown} 项活动费用未知` : '活动费用均已填写'} · 全部天数，不含未填写的交通住宿等开支</span></p>}
           <button className="edit-button" onClick={startEdit} disabled={agentWorking || applying || !!locating}><Pencil size={18} />{workspace.draft ? '继续编辑草稿' : '编辑当天行程'}</button>
           {workspace.previousTrip && <button className="restore-trip-button" disabled={agentWorking || applying || !!workspace.draft} onClick={() => void restoreTrip()}><RotateCcw size={14} />恢复上一版行程</button>}
         </section>}
@@ -395,12 +403,19 @@ export default function App() {
           <div className="editor-fields">
             <div className="editor-inline"><label className="field-label">时间<input type="time" value={activity.time} onChange={event => editActivity(activity.id, { time: event.target.value })} /></label><label className="field-label name-field">地点<input maxLength={60} value={activity.title} onChange={event => editActivity(activity.id, { title: event.target.value })} /></label></div>
             {trip && <div className="editor-location"><span>{activity.place ? activity.place.address || '已定位' : '地点名称已改，请重新定位。'}</span><button type="button" className="text-button" disabled={!activity.title.trim() || !ready} onClick={() => void locateActivity(activity)}>{locating === activity.id ? '定位中…' : '重新定位'}</button></div>}
+            {trip && <><TripLeg previous={day.activities[index - 1]} activity={activity} mode={trip.transportMode ?? 'walking'} /><label className="field-label cost-field">活动费用（元）<input aria-label="活动费用（元）" type="number" min="0" max="1000000" step="0.01" inputMode="decimal" placeholder="未知，请留空" value={activity.cost == null ? '' : activity.cost.amountFen / 100} onChange={event => {
+              const value = event.target.value
+              if (value === '') { editActivity(activity.id, { cost: null }); return }
+              if (!event.target.validity.valid) { notify('费用请填写 0～1000000 元，最多两位小数；未知时留空。', true); return }
+              editActivity(activity.id, { cost: { amountFen: Math.round(Number(value) * 100), currency: 'CNY', source: 'user' } })
+            }} /><span>按用户填写计入小计；确认免费填 0。</span></label></>}
             <div className="field-label"><label htmlFor={`notes-${activity.id}`}>备注</label><textarea id={`notes-${activity.id}`} rows={2} maxLength={500} value={activity.description} onChange={event => editActivity(activity.id, { description: event.target.value })} /></div>
           </div>
           <div className="reorder-buttons"><button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div>
         </div>)}
-        <p className="muted-note">{trip ? '改地点后需重新定位；调整顺序时也请调整时间，避免活动重叠。时间为建议，地图不代替实际导航。' : '当前编辑的是示例行程，地点位置不作为真实旅行依据。'}</p>
-        <div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null, draftTrip: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving || !!recovering} onClick={() => void applyDraft()}><Check size={17} />{applying ? '正在应用…' : '应用修改'}</button></div>
+        <p className="muted-note">{trip ? '改地点后需重新定位，费用可留空；应用时核查新接驳路线。查不到的耗时会标为未知，请自行确认。' : '当前编辑的是示例行程，地点位置不作为真实旅行依据。'}</p>
+        {routeConflict && <p className="inline-error" role="alert">{routeConflict} 请调整活动时间后再应用。</p>}
+        <div className="dialog-actions"><button className="text-button" onClick={() => { change({ ...dataRef.current, draft: null, draftTrip: null }); setPanel(null); notify('已放弃草稿，正式行程未改变。') }}>放弃修改</button><button className="primary-button" disabled={!ready || saving || !!recovering || !!routeConflict} onClick={() => void applyDraft()}><Check size={17} />{applying ? '正在核查并应用…' : '应用修改'}</button></div>
       </fieldset>
     </div></Dialog>}
     {panel === 'photos' && <Dialog title="旅行中的片刻" onClose={() => setPanel(null)} wide><div className="photo-gallery"><figure><Photo /><figcaption>西湖桥畔的日落 · DXR</figcaption></figure><figure><Photo src={PHOTO_TWO} /><figcaption>西湖暮色 · Tyler Valentine</figcaption></figure><p>西湖风景参考，不代表当前行程的地点或实时实拍。授权及来源见“设置与更新”。</p></div></Dialog>}

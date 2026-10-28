@@ -12,6 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from backend.mcp_client import ToolError
+from backend.trip_routes import MODES, query_route, route_fresh, route_matches, unknown_route
 
 
 class StrictModel(BaseModel):
@@ -23,6 +24,41 @@ class TripRequest(StrictModel):
     days: int = Field(ge=1, le=7)
     stops_per_day: int | None = Field(default=None, ge=1, le=8, description="用户指定每天的地点数；单日行程指定3个地点时必须为3。未指定为null。")
     map_provider: Literal["baidu", "amap"] | None = Field(default=None, description="用户明确只使用百度或高德时分别填baidu或amap，未限定为null。限定时本次仅查询该地图地点。")
+    transport_mode: Literal["walking", "driving", "transit"] = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
+
+
+class SourceLocation(StrictModel):
+    latitude: float = Field(ge=-85, le=85)
+    longitude: float = Field(ge=-180, le=180)
+    coordinateSystem: Literal["bd09ll", "gcj02"]
+
+
+class ActivityCost(StrictModel):
+    amountFen: int = Field(ge=0, le=100000000)
+    currency: Literal["CNY"] = "CNY"
+    source: Literal["user"] = "user"
+
+
+class IncomingRoute(StrictModel):
+    fromPlaceId: str = Field(min_length=1, max_length=200)
+    toPlaceId: str = Field(min_length=1, max_length=200)
+    mode: Literal["walking", "driving", "transit"]
+    status: Literal["verified", "unknown"]
+    durationMinutes: int | None = Field(default=None, ge=1, le=2880)
+    distanceMeters: int | None = Field(default=None, ge=0, le=3000000)
+    provider: Literal["baidu", "amap"] | None = None
+    queriedAt: str | None = Field(default=None, max_length=50)
+    reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def complete_evidence(self):
+        if self.queriedAt is not None and datetime.fromisoformat(self.queriedAt).tzinfo is None:
+            raise ValueError("route timestamp needs a timezone")
+        if self.status == "verified" and (self.durationMinutes is None or self.distanceMeters is None or not self.provider or not self.queriedAt):
+            raise ValueError("verified route needs provider metrics and time")
+        if self.status == "unknown" and (self.durationMinutes is not None or self.distanceMeters is not None):
+            raise ValueError("unknown route cannot contain metrics")
+        return self
 
 
 class Place(StrictModel):
@@ -33,11 +69,14 @@ class Place(StrictModel):
     longitude: float = Field(ge=-180, le=180)
     coordinateSystem: Literal["wgs84"] = "wgs84"
     provider: Literal["baidu", "amap"]
+    sourceLocation: SourceLocation | None = None
 
     @model_validator(mode="after")
     def matching_provider(self):
         if not self.id.startswith(self.provider + ":"):
             raise ValueError("place identifier and provider disagree")
+        if self.sourceLocation and self.sourceLocation.coordinateSystem != ("bd09ll" if self.provider == "baidu" else "gcj02"):
+            raise ValueError("source coordinate system and provider disagree")
         return self
 
 
@@ -64,6 +103,7 @@ class TripMeta(StrictModel):
     destination: str = Field(min_length=1, max_length=60)
     summary: str = Field(min_length=1, max_length=800)
     generatedAt: str = Field(min_length=1, max_length=50)
+    transportMode: Literal["walking", "driving", "transit"] | None = None
 
     @model_validator(mode="after")
     def timestamp(self):
@@ -81,6 +121,8 @@ class TripActivity(StrictModel):
     x: float = 0
     y: float = 0
     place: Place
+    incomingRoute: IncomingRoute | None = None
+    cost: ActivityCost | None = None
 
 
 class TripDay(StrictModel):
@@ -115,12 +157,41 @@ class TripResult(StrictModel):
 
 
 def validate_result(value: dict) -> dict:
-    return TripResult.model_validate(value).model_dump()
+    result = TripResult.model_validate(value).model_dump(exclude_none=True)
+    check_transfers(result["days"], result["trip"].get("transportMode"))
+    return result
+
+
+class TripTimingError(ValueError):
+    pass
+
+
+def check_transfers(days, transport_mode=None):
+    for day in days:
+        previous = None
+        for activity in day["activities"]:
+            route = activity.get("incomingRoute")
+            if route is not None:
+                if previous is None or not route_matches(route, previous["place"], activity["place"]):
+                    raise TripTimingError("地点顺序已改变，请重新查询相邻活动间的交通。")
+                if transport_mode and route["mode"] != transport_mode:
+                    raise TripTimingError("交通方式已改变，请重新查询相邻活动间的交通。")
+                if route["status"] == "verified" and route_fresh(route):
+                    end = int(previous["time"][:2]) * 60 + int(previous["time"][3:]) + int(re.search(r"\d+", previous["duration"])[0])
+                    start = int(activity["time"][:2]) * 60 + int(activity["time"][3:])
+                    if start - end < route["durationMinutes"]:
+                        raise TripTimingError(f"第 {day['day']} 天前往{activity['title']}的接驳至少需要 {route['durationMinutes']} 分钟，当前只预留 {start - end} 分钟，请调整时间。")
+            previous = activity
 
 
 SEARCH_TOOL = {"name": "search_trip_places", "description": "查询目的地内真实地点，取得可用于 submit_trip 的 place_id 和位置。优先百度；某服务失败可明确改用另一可用服务。", "inputSchema": {
     "type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 120},
     "provider": {"type": "string", "enum": ["baidu", "amap"]}}, "required": ["query"], "additionalProperties": False,
+}}
+ROUTE_TOOL = {"name": "query_trip_route", "description": "查询两个已验证地点间的实际路线距离与交通耗时；传地点ID，不传坐标。失败返回unknown。提交行程前应查询每段相邻地点交通；使用用户指定方式。", "inputSchema": {
+    "type": "object", "properties": {"from_place_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "to_place_id": {"type": "string", "minLength": 1, "maxLength": 200}, "mode": {"type": "string", "enum": ["walking", "driving", "transit"]}},
+    "required": ["from_place_id", "to_place_id"], "additionalProperties": False,
 }}
 SUBMIT_TOOL = {"name": "submit_trip", "description": "完成行程：只能引用 available_places / search_trip_places 的真实 place_id。每天按时间升序，时段不得重叠。时间和停留为建议，未核实的费用、营业、预约须注明待确认。", "inputSchema": TripInput.model_json_schema()}
 
@@ -169,16 +240,24 @@ class TripResearch:
         self.map_provider = map_provider
         self.places: dict[str, dict] = {}
         self.activity_ids: dict[tuple[int, str], str] = {}
+        self.routes: dict[tuple[str, str, str], dict] = {}
+        self.costs: dict[tuple[int, str], dict] = {}
         self.unavailable: set[str] = set()
         for day in existing_days or []:
             for activity in day.get("activities", []):
                 try:
-                    place = Place.model_validate(activity.get("place")).model_dump()
+                    place = Place.model_validate(activity.get("place")).model_dump(exclude_none=True)
                     if map_provider is None or place["provider"] == map_provider:
                         self.places[place["id"]] = place
                         identifier, number = activity.get("id"), day.get("day")
                         if isinstance(identifier, str) and 1 <= len(identifier.strip()) <= 200 and type(number) is int and 1 <= number <= 7:
                             self.activity_ids[number, place["id"]] = identifier.strip()
+                        if activity.get("cost") is not None:
+                            self.costs[number, place["id"]] = ActivityCost.model_validate(activity["cost"]).model_dump()
+                        if activity.get("incomingRoute") is not None:
+                            route = IncomingRoute.model_validate(activity["incomingRoute"]).model_dump(exclude_none=True)
+                            if route["toPlaceId"] == place["id"] and route["status"] == "verified" and route_fresh(route):
+                                self.routes[route["fromPlaceId"], route["toPlaceId"], route["mode"]] = route
                 except (ValidationError, TypeError):
                     continue
 
@@ -221,17 +300,31 @@ class TripResearch:
                 lng, lat = float(lng), float(lat)
                 if not math.isfinite(lng) or not math.isfinite(lat) or not -180 <= lng <= 180 or not -85 <= lat <= 85:
                     continue
+                source = {"latitude": lat, "longitude": lng, "coordinateSystem": "bd09ll" if provider == "baidu" else "gcj02"}
                 lng, lat = to_wgs84(lng, lat, provider)
                 address = row.get("address", "")
                 place = Place(id=provider + ":" + row["uid" if provider == "baidu" else "id"], name=row["name"],
-                              address=address if isinstance(address, str) else "", latitude=lat, longitude=lng, provider=provider).model_dump()
+                              address=address if isinstance(address, str) else "", latitude=lat, longitude=lng, provider=provider, sourceLocation=source).model_dump(exclude_none=True)
             except (ValueError, TypeError, KeyError, AttributeError):
                 continue
             found[place["id"]] = place
             if len(found) == 10:
                 break
+        changed = {identifier for identifier, place in found.items() if identifier in self.places and self.places[identifier].get("sourceLocation") != place.get("sourceLocation")}
+        self.routes = {key: route for key, route in self.routes.items() if not changed.intersection(key[:2])}
         self.places.update(found)
         return list(found.values())
+
+    async def route(self, from_place_id: str, to_place_id: str, mode: str = "walking") -> dict:
+        origin, destination = self.places.get(from_place_id), self.places.get(to_place_id)
+        if not origin or not destination or from_place_id == to_place_id or mode not in MODES:
+            raise ToolError("tool_arguments", False, "请先查询两个不同的真实地点，并选择有效交通方式。")
+        key = from_place_id, to_place_id, mode
+        cached = self.routes.get(key)
+        if cached and route_fresh(cached):
+            return deepcopy(cached)
+        self.routes[key] = await query_route(self.tools, origin, destination, mode, self.destination)
+        return deepcopy(self.routes[key])
 
     def submit(self, arguments: dict, request: TripRequest) -> dict:
         try:
@@ -261,9 +354,15 @@ class TripResearch:
                 activities.append({"id": self.activity_ids.get((day.day, place["id"])) or str(uuid4()), "title": place["name"], "time": stop.time,
                     "duration": f"约 {stop.duration_minutes} 分钟", "description": stop.description,
                     "x": 0, "y": 0, "place": deepcopy(place)})
+                if (day.day, place["id"]) in self.costs:
+                    activities[-1]["cost"] = deepcopy(self.costs[day.day, place["id"]])
+                if len(activities) > 1:
+                    origin = activities[-2]["place"]
+                    route = self.routes.get((origin["id"], place["id"], request.transport_mode))
+                    activities[-1]["incomingRoute"] = deepcopy(route) if route and route_fresh(route) else unknown_route(origin, place, request.transport_mode)
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})
         return validate_result({"days": days, "trip": {"destination": request.destination, "summary": planned.summary,
-                                      "generatedAt": datetime.now(timezone.utc).isoformat()}})
+                                      "generatedAt": datetime.now(timezone.utc).isoformat(), "transportMode": request.transport_mode}})
 
 
 COORDTRANSFORM_LICENSE = """The MIT License (MIT)

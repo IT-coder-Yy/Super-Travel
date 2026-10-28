@@ -26,13 +26,22 @@ def route(kind="plan", content="开始查询。", steps=None, replace_active=Fal
 
 
 class FakeModel:
-    def __init__(self, routes, execute=None):
+    def __init__(self, routes, execute=None, summarize=None):
         self.routes = list(routes)
         self.execute = execute or (lambda messages: reply("查询结果已整理。"))
         self.planner_calls = []
         self.executor_calls = []
+        self.summary_calls = []
+        self.summarize = summarize
 
     async def chat(self, messages, tools=None, **kwargs):
+        if not tools:
+            self.summary_calls.append(deepcopy(messages))
+            if self.summarize:
+                return self.summarize(messages)
+            context = json.loads(messages[-1]["content"])
+            trip = context.get("trip_result")
+            return reply(f"已生成{trip['trip']['destination']} {len(trip['days'])} 天行程。" if trip else context["completed_steps"][-1]["content"])
         if tools and tools[0]["function"]["name"] == "route_request":
             self.planner_calls.append(deepcopy(messages))
             return self.routes.pop(0)
@@ -399,4 +408,170 @@ def test_step_can_summarize_existing_successful_tool_results_without_another_cal
         state = await finish(session)
         assert state["status"] == "completed" and len(state["results"]) == 2
         assert state["tool_calls"] == 1 and len(tools.calls) == 1
+    asyncio.run(run())
+
+
+def test_planner_gives_final_answer_after_executor_observes_tool_result():
+    async def run():
+        def summarize(messages):
+            context = json.loads(messages[-1]["content"])
+            assert context["request"] == "查询杭州天气"
+            assert context["completed_steps"] == [{"step": "查询杭州天气", "content": "工具返回杭州晴。"}]
+            assert context["trip_result"] is None
+            return reply("查询结果显示杭州晴，出行前请留意变化。")
+
+        model = FakeModel([route()], execute_weather, summarize)
+        tools = FakeTools()
+        session, events = session_for(model, tools)
+        await session.chat("查询杭州天气")
+        state = await finish(session)
+        assert state["status"] == "completed" and state["content"] == "查询结果显示杭州晴，出行前请留意变化。"
+        assert len(model.summary_calls) == 1 and len(tools.calls) == 1
+        assert any(event["content"] == "规划 Agent 正在汇总结果。" and event["status"] == "running" for event in events)
+        assert events[-1]["status"] == "completed"
+    asyncio.run(run())
+
+
+def test_executor_plan_feedback_is_replanned_without_calling_remote_tool():
+    async def run():
+        def execute(messages):
+            step = json.loads(messages[1]["content"])["step"]
+            if step == "查询杭州天气":
+                return reply(name="report_plan_issue", arguments={"reason": "用户指定日期超过天气服务可查询范围，请确认日期。"})
+            return execute_weather(messages)
+
+        model = FakeModel([route(), route(steps=["查询近期杭州天气"])], execute)
+        tools = FakeTools()
+        session, events = session_for(model, tools)
+        await session.chat("查询杭州天气")
+        state = await finish(session)
+        feedback = json.loads(model.planner_calls[1][-1]["content"])
+        assert "超过天气服务" in feedback["execution_failure"]
+        assert feedback["current_run"]["results"] == []
+        assert state["status"] == "completed" and state["replans"] == 1
+        assert len(tools.calls) == state["tool_calls"] == 1
+        assert len(model.summary_calls) == 1 and len(state["results"]) == 1
+        assert any(event["status"] == "replanning" for event in events)
+    asyncio.run(run())
+
+
+def test_executor_feedback_can_return_to_user_for_clarification():
+    async def run():
+        model = FakeModel([route(), route("clarification", "请补充出行日期。")],
+                          lambda messages: reply(name="report_plan_issue", arguments={"reason": "缺少出行日期，无法查询。"}))
+        tools = FakeTools()
+        session, _ = session_for(model, tools)
+        await session.chat("查天气")
+        state = await finish(session)
+        assert state["status"] == "needs_input" and state["content"] == "请补充出行日期。"
+        assert not tools.calls and not model.summary_calls and not state["results"]
+        assert state["tool_calls"] == 0
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("summary_reply", [reply(""), reply(name="amap_weather", arguments={"city": "杭州"}), ModelError("model_timeout", "secret provider details")])
+def test_summary_failure_keeps_completed_work_without_repeating_tools(summary_reply):
+    async def run():
+        def summarize(messages):
+            if isinstance(summary_reply, Exception):
+                raise summary_reply
+            return summary_reply
+
+        model = FakeModel([route()], execute_weather, summarize)
+        tools = FakeTools()
+        session, _ = session_for(model, tools)
+        await session.chat("查询杭州天气")
+        state = await finish(session)
+        assert state["status"] == "completed"
+        assert "规划汇总暂时不可用" in state["content"] and "工具返回杭州晴" in state["content"]
+        assert "secret" not in state["content"]
+        assert len(tools.calls) == 1 and len(model.summary_calls) == 1 and state["replans"] == 0
+    asyncio.run(run())
+
+
+def test_cancelled_summary_cannot_publish_even_when_model_ignores_cancellation():
+    async def run():
+        started, release = asyncio.Event(), asyncio.Event()
+
+        class SlowSummaryModel(FakeModel):
+            async def chat(self, messages, tools=None, **kwargs):
+                if not tools:
+                    started.set()
+                    try:
+                        await release.wait()
+                    except asyncio.CancelledError:
+                        await release.wait()
+                    return reply("迟到的规划汇总")
+                return await super().chat(messages, tools, **kwargs)
+
+        session, events = session_for(SlowSummaryModel([route()], execute_weather))
+        await session.chat("查询杭州天气")
+        await started.wait()
+        await session.cancel()
+        count = len(events)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await session._task
+        assert len(events) == count and session.snapshot()["status"] == "cancelled"
+        assert all(event["status"] != "completed" for event in events)
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("days,explicit,expected", [(1, None, 15), (3, None, 29), (7, None, 57), (7, 2, 2)])
+def test_trip_tool_budget_is_bounded_and_respects_explicit_limit(days, explicit, expected):
+    async def run():
+        plan = reply(name="route_request", arguments={"kind": "plan", "content": "查询地点和交通", "steps": ["查询"], "trip": {"destination": "杭州", "days": days}})
+        session, _ = session_for(FakeModel([plan]), max_tool_calls=explicit)
+        await session.chat(f"杭州{days}天")
+        assert session._tool_limit == expected
+        await session.aclose()
+    asyncio.run(run())
+
+
+def test_trip_summary_uses_structured_result_only_and_identifies_draft():
+    async def run():
+        trip = {"days": [{"day": 1, "activities": []}], "trip": {"destination": "杭州"}}
+        def summarize(messages):
+            context = json.loads(messages[-1]["content"])
+            assert context["trip_result"] == trip and context["is_draft"] is True
+            assert context["completed_steps"] == []
+            assert "不可用的步骤文字" not in messages[-1]["content"]
+            raise ModelError("model_timeout", "provider details")
+
+        model = FakeModel([], summarize=summarize)
+        session, _ = session_for(model)
+        session._run_id = "summary-test"
+        content = await session._summarize("summary-test", "修改备注", [{"step": "旧步骤", "content": "不可用的步骤文字"}], trip, is_draft=True)
+        assert "修改草稿已生成，请检查后应用" in content
+        assert "不可用的步骤文字" not in content and "provider details" not in content
+        assert len(model.summary_calls) == 1
+    asyncio.run(run())
+
+
+def test_executor_place_options_omit_coordinates_without_changing_backend_evidence():
+    async def run():
+        from backend.trips import TripRequest
+        place = {"id": "baidu:test", "name": "测试公园", "address": "测试地址", "provider": "baidu",
+                 "latitude": 30.25, "longitude": 120.15, "coordinateSystem": "wgs84",
+                 "sourceLocation": {"latitude": 30.26, "longitude": 120.16, "coordinateSystem": "bd09ll"}}
+        expected = {key: place[key] for key in ("id", "name", "address", "provider")}
+        class Research:
+            places = {place["id"]: deepcopy(place)}
+            routes = {}
+            async def search(self, query, provider):
+                return list(self.places.values())
+
+        def execute(messages):
+            context = json.loads(messages[1]["content"])
+            assert context["available_places"] == [expected]
+            assert "sourceLocation" not in messages[1]["content"]
+            return reply("已整理现有地点。")
+
+        session, _ = session_for(FakeModel([], execute))
+        session._run_id = "projection-test"
+        research = Research()
+        result = await session._call_tool("projection-test", "search_trip_places", {"query": "公园"}, research=research)
+        assert json.loads(result["content"][0]["text"])["places"] == [expected]
+        await session._execute_step("projection-test", "安排杭州", "整理已有地点", [], {}, research=research, trip=TripRequest(destination="杭州", days=1))
+        assert research.places[place["id"]] == place
     asyncio.run(run())

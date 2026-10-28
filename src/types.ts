@@ -1,6 +1,7 @@
-export type Place = { id: string; name: string; address: string; latitude: number; longitude: number; coordinateSystem: 'wgs84'; provider: 'baidu' | 'amap' }
-export type TripMeta = { destination: string; summary: string; generatedAt: string }
-export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place }
+export type Place = { id: string; name: string; address: string; latitude: number; longitude: number; coordinateSystem: 'wgs84'; provider: 'baidu' | 'amap'; sourceLocation?: { latitude: number; longitude: number; coordinateSystem: 'bd09ll' | 'gcj02' } | null }
+export type TripMeta = { destination: string; summary: string; generatedAt: string; transportMode?: 'walking' | 'driving' | 'transit' | null }
+export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null }
+export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
 export type TripDay = { day: number; title: string; subtitle: string; activities: Activity[] }
 export type Message = { id: string; role: 'user' | 'assistant'; content: string }
 export type AgentState = { persisted?: boolean; run_id?: string | null; status: 'idle' | 'running' | 'replanning' | 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'interrupted'; plan?: string[]; results?: { step: string; content: string }[]; content?: string; error?: string | null; tool_calls?: number }
@@ -52,7 +53,19 @@ function validDays(value: unknown): value is TripDay[] {
     typeof day.title === 'string' && typeof day.subtitle === 'string' && Array.isArray(day.activities) &&
     day.activities.every((activity: Activity) => activity && typeof activity.id === 'string' && typeof activity.title === 'string' &&
       typeof activity.time === 'string' && typeof activity.duration === 'string' && typeof activity.description === 'string' &&
-      Number.isFinite(activity.x) && Number.isFinite(activity.y) && (activity.place === undefined || validPlace(activity.place))))
+      Number.isFinite(activity.x) && Number.isFinite(activity.y) && (activity.place === undefined || validPlace(activity.place)) &&
+      (activity.cost == null || Number.isSafeInteger(activity.cost.amountFen) && activity.cost.amountFen >= 0 && activity.cost.amountFen <= 100000000 && activity.cost.currency === 'CNY' && activity.cost.source === 'user') &&
+      (activity.incomingRoute == null || validRoute(activity.incomingRoute))))
+}
+
+function validRoute(route: TripRoute): boolean {
+  return typeof route.fromPlaceId === 'string' && typeof route.toPlaceId === 'string' &&
+    ['walking', 'driving', 'transit'].includes(route.mode) && ['verified', 'unknown'].includes(route.status) &&
+    (route.durationMinutes == null || Number.isSafeInteger(route.durationMinutes) && route.durationMinutes >= 0) &&
+    (route.distanceMeters == null || Number.isSafeInteger(route.distanceMeters) && route.distanceMeters >= 0) &&
+    (route.provider == null || ['baidu', 'amap'].includes(route.provider)) &&
+    (route.queriedAt == null || typeof route.queriedAt === 'string') && (route.reason == null || typeof route.reason === 'string') &&
+    (route.status !== 'verified' || route.durationMinutes != null)
 }
 
 export function isWorkspaceData(value: unknown): value is WorkspaceData {

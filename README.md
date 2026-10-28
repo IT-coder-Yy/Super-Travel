@@ -4,6 +4,8 @@
 
 界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。主分支支持真实地点行程生成、地图展示、草稿修改和本地保存；新会话从空白开始，旧示例会话仍明确标注。
 
+0.1.3 开发进展：[双层 ReAct、相邻路线耗时检查与已知费用小计](docs/M5.md)。此开发版本尚未发布，公开安装包仍为上述 0.1.2。
+
 ![0.1.1 示例工作台参考界面](docs/preview.png)
 
 截图来自本工程实际运行页面。照片：[DXR 的桥畔日落](https://commons.wikimedia.org/wiki/File:Sunset_over_the_Zigzag_Bridge,_West_Lake,_Hangzhou_20090909_1.jpg)、[Tyler Valentine 的西湖暮色](https://commons.wikimedia.org/wiki/File:West_lake_twilight.jpg)，按 CC BY-SA 4.0 裁切展示；界面内也保留来源说明。

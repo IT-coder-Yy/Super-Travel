@@ -39,6 +39,100 @@ def save(client, document, data):
     return client.put(f"/api/conversations/{document['id']}", headers=AUTH, json={"title": document["title"], "expected_revision": document["revision"], "data": data})
 
 
+def test_user_cost_is_saved_but_forged_route_metrics_cannot_enter_draft(app):
+    with TestClient(app) as client:
+        document = create(client)
+        data = deepcopy(document["data"])
+        data["draft"] = deepcopy(data["days"])
+        activity = data["draft"][0]["activities"][0]
+        activity["cost"] = {"amountFen": 1999, "currency": "CNY", "source": "user"}
+        saved = save(client, document, data)
+        assert saved.status_code == 200
+        document = saved.json()
+        for bad in [True, -1, 0.1]:
+            activity["cost"]["amountFen"] = bad
+            assert save(client, document, data).status_code == 422
+        activity["cost"]["amountFen"] = 1999
+        activity["incomingRoute"] = {"fromPlaceId": "baidu:forged", "toPlaceId": activity["place"]["id"], "mode": "walking", "status": "verified",
+            "durationMinutes": 1, "distanceMeters": 1, "provider": "baidu", "queriedAt": "2026-10-28T00:00:00+08:00"}
+        assert save(client, document, data).status_code == 422
+        actual = app.state.store.get(UUID(document["id"]))
+        assert actual.data["draft"][0]["activities"][0]["cost"]["amountFen"] == 1999
+        assert "incomingRoute" not in actual.data["draft"][0]["activities"][0]
+
+
+def test_known_transfer_conflict_rejects_apply_without_losing_formal_or_draft(app):
+    import asyncio
+    from backend.tests.test_trip_routes import research_pair
+    from backend.trips import TripRequest
+    async def result():
+        tools, research, places, value = await research_pair()
+        await research.route(places[0]["id"], places[1]["id"])
+        return tools, research.submit(value, TripRequest(destination="杭州", days=1))
+    tools, trip = asyncio.run(result())
+    app.state.agents.tools = tools
+    with TestClient(app) as client:
+        document = create(client, real=False)
+        document = app.state.store.mutate(UUID(document["id"]), lambda data: data.update(**trip)).model_dump(mode="json")
+        data = deepcopy(document["data"])
+        data["draft"] = deepcopy(data["days"])
+        data["draft"][0]["activities"][1]["time"] = "10:01"
+        saved = save(client, document, data).json()
+        response = client.post(f"/api/conversations/{document['id']}/trip/apply", headers=AUTH, json={"expected_revision": saved["revision"]})
+        assert response.status_code == 422 and response.json()["detail"]["code"] == "trip_transfer_conflict"
+        assert "至少需要 13 分钟" in response.json()["detail"]["message"]
+        assert app.state.store.get(UUID(document["id"])).model_dump(mode="json") == saved
+
+
+def test_same_id_refreshed_place_can_autosave_but_cannot_reuse_old_coordinate_route(app):
+    import asyncio
+    from backend.tests.test_trip_routes import research_pair
+    from backend.trips import TripRequest
+    async def result():
+        _, research, places, value = await research_pair()
+        await research.route(places[0]["id"], places[1]["id"])
+        return research.submit(value, TripRequest(destination="杭州", days=1))
+    trip = asyncio.run(result())
+    with TestClient(app) as client:
+        document = create(client, real=False)
+        def refresh(data):
+            data.update(**trip, draft=deepcopy(trip["days"]))
+            activity = data["draft"][0]["activities"][1]
+            activity.pop("incomingRoute")
+            activity["place"]["sourceLocation"]["latitude"] += .01
+            activity["place"]["latitude"] += .01
+        document = app.state.store.mutate(UUID(document["id"]), refresh).model_dump(mode="json")
+        saved = save(client, document, document["data"])
+        assert saved.status_code == 200
+        document = saved.json()
+        data = deepcopy(document["data"])
+        data["draft"][0]["activities"][1]["incomingRoute"] = deepcopy(data["days"][0]["activities"][1]["incomingRoute"])
+        rejected = save(client, document, data)
+        assert rejected.status_code == 422 and rejected.json()["detail"]["code"] == "route_unverified"
+
+
+def test_resolving_unchanged_place_keeps_user_cost(app):
+    import asyncio
+    from backend.tests.test_trip_routes import RouteMaps, research_pair
+    from backend.trips import TripRequest
+    async def result():
+        _, research, _, value = await research_pair()
+        return research.submit(value, TripRequest(destination="杭州", days=1))
+    trip = asyncio.run(result())
+    app.state.agents.tools = RouteMaps()
+    with TestClient(app) as client:
+        document = create(client, real=False)
+        def draft(data):
+            data.update(**trip, draft=deepcopy(trip["days"]))
+            data["draft"][0]["activities"][0]["cost"] = {"amountFen": 2580, "source": "user", "currency": "CNY"}
+        document = app.state.store.mutate(UUID(document["id"]), draft).model_dump(mode="json")
+        activity = document["data"]["draft"][0]["activities"][0]
+        response = client.post(f"/api/conversations/{document['id']}/resolve-place", headers=AUTH, json={
+            "expected_revision": document["revision"], "activity_id": activity["id"], "query": activity["title"]})
+        assert response.status_code == 200
+        assert response.json()["data"]["draft"][0]["activities"][0]["cost"]["amountFen"] == 2580
+
+
 def test_generation_first_formal_then_draft_without_overwriting(app):
     with TestClient(app) as client:
         document = create(client, real=False)

@@ -52,6 +52,14 @@ class FixtureModel:
             if messages[-1]["role"] == "tool":
                 return reply("固定测试查询已完成；这不是实时天气数据。")
             return reply(name="fixture_weather", arguments={"city": "杭州"})
+        try:
+            context = json.loads(messages[-1]["content"])
+        except (ValueError, TypeError):
+            context = {}
+        if isinstance(context, dict) and "completed_steps" in context:
+            if context.get("trip_result"):
+                return reply("固定离线测试行程已生成；时间与费用仍需确认。")
+            return reply("固定测试查询已完成；这不是实时天气数据。")
         return reply("OK")
 
 

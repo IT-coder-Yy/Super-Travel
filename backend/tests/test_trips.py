@@ -65,7 +65,8 @@ def test_baidu_search_pins_city_normalizes_observed_result_and_ignores_unusable_
         assert len(places) == 1 and places[0]["id"] == PLACE_ID
         assert places[0]["longitude"] != BAIDU_POI["location"]["lng"]
         assert places[0]["coordinateSystem"] == "wgs84"
-        assert set(places[0]) == {"id", "name", "address", "latitude", "longitude", "coordinateSystem", "provider"}
+        assert set(places[0]) == {"id", "name", "address", "latitude", "longitude", "coordinateSystem", "provider", "sourceLocation"}
+        assert places[0]["sourceLocation"] == {"latitude": BAIDU_POI["location"]["lat"], "longitude": BAIDU_POI["location"]["lng"], "coordinateSystem": "bd09ll"}
         assert tools.calls == [("baidu_map_search_places", {"query": "断桥残雪", "region": "杭州"})]
     asyncio.run(run())
 
@@ -163,7 +164,7 @@ def test_trip_catalog_never_offers_raw_coordinate_tools_and_honors_only_map(prov
         session, _ = session_for(CapturingModel([trip_route(map_provider=provider, stops_per_day=1)], execute_trip), tools)
         await session.chat("杭州一天一个景点，按指定供应商查询")
         assert (await finish(session))["status"] == "completed"
-        expected = {"search_trip_places", "submit_trip"} | ({"amap_maps_weather", "serper_search"} if provider is None else set())
+        expected = {"search_trip_places", "submit_trip", "query_trip_route", "report_plan_issue"} | ({"amap_maps_weather", "serper_search"} if provider is None else set())
         assert captured and all(names == expected for names in captured)
         assert tools.calls == [("baidu_map_search_places", {"query": "断桥残雪", "region": "杭州"})]
     asyncio.run(run())
@@ -254,13 +255,17 @@ def test_trip_completion_shows_summary_without_internal_step_tables_or_coordinat
             if json.loads(messages[1]["content"])["step"] == "查询地点":
                 return reply("内部地点表：baidu:fixture 120.158 30.264") if messages[-1]["role"] == "tool" else reply(name="search_trip_places", arguments={"query": "断桥"})
             return reply(name="submit_trip", arguments=submitted())
-        session, _ = session_for(FakeModel([trip_route(steps=["查询地点", "提交行程"])], execute), Maps())
+        model = FakeModel([trip_route(steps=["查询地点", "提交行程"])], execute)
+        session, _ = session_for(model, Maps())
         await session.chat("杭州一天")
         state = await finish(session)
         assert state["status"] == "completed"
         assert "内部地点表" in state["results"][0]["content"]
         assert "baidu:" not in state["content"] and "120.158" not in state["content"]
-        assert state["content"] == state["results"][-1]["content"]
+        assert len(model.summary_calls) == 1
+        summary = json.loads(model.summary_calls[0][-1]["content"])
+        assert summary["completed_steps"] == [] and summary["trip_result"] == state["trip_result"]
+        assert summary["is_draft"] is False
     asyncio.run(run())
 
 
