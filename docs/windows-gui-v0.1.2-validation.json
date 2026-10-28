@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-10-28T13:24:02.846095+00:00",
+  "from": "0.1.1",
+  "to": "0.1.2",
+  "publishedRelease": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.2",
+  "oldClientGuiUpdateTested": true,
+  "method": "Actual installed Tauri WebView UI, check update and Save and Update buttons",
+  "currentReleaseNotesVerified": true,
+  "oldWebViewClosedForInstall": true,
+  "automaticRestartObserved": true,
+  "installedProductVersion": "0.1.2",
+  "automaticRestartWorkspaceObserved": "saved conversation, draft and ready backend visible via native accessibility tree",
+  "customChineseAndSpaceDataDirectoryRetained": true,
+  "conversations": [
+    {
+      "conversation": "a821ee8c-473c-411e-9623-d6e6b04cfb5c.json",
+      "content": "deep-equal",
+      "revisionChange": 1,
+      "backup": "equals previous saved conversation"
+    }
+  ],
+  "toolsSettingsBytesPreserved": true,
+  "directoryPreferencesBytesPreserved": true,
+  "temporaryPreferencesRestored": true,
+  "installedSettingsUi": {
+    "version": "0.1.2",
+    "toolsUrl": "http://127.0.0.1:8080",
+    "localToolsConnected": true,
+    "providerCount": 5
+  },
+  "cleanup": "Temporary directory preferences removed after exact-byte verification; independent fixture files retained. Test process stopped after read-only installed-settings checks.",
+  "completedAt": "2026-10-28T13:27:14.980609+00:00"
+}

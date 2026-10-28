@@ -1,6 +1,6 @@
 # SuperTravelAgent
 
-本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 0.1.1 桌面骨架，主分支为 0.1.2 开发版；验收状态见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md) 与 [真实行程闭环](docs/M3.md)。
+本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 [0.1.2 本机开发版](https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.2)，设置支持修改工具服务地址；验收状态见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md)、[真实行程闭环](docs/M3.md) 与 [0.1.2 发布验证](docs/M4.md)。
 
 界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。主分支支持真实地点行程生成、地图展示、草稿修改和本地保存；新会话从空白开始，旧示例会话仍明确标注。
 
@@ -91,4 +91,4 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 
-真实行程生成、地图展示、修改和保存已完成本机联调，验证范围见 [M3](docs/M3.md)。0.1.2 采用本机工具服务继续开发，公网部署不是本次发布前提；发布与 Windows 升级验收进度见 [M4](docs/M4.md)。
+真实行程生成、地图展示、修改和保存已完成本机联调，验证范围见 [M3](docs/M3.md)。0.1.2 已发布，默认使用本机工具服务，尚未部署公共云服务；发布与 Windows 升级验证见 [M4](docs/M4.md)。

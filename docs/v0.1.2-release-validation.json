@@ -1,0 +1,188 @@
+{
+  "version": "0.1.2",
+  "commit": "3ee0ac6b515c12a651ac65cb95f6dae07d1495b6",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718",
+  "defaultToolsUrl": "http://127.0.0.1:8080",
+  "cloudServiceDeployed": false,
+  "release_published": true,
+  "desktop_gui_upgrade_evidence": "Recorded separately; this report covers the native CI updater APIs.",
+  "targets": [
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718/job/122830269599",
+      "build": "passed",
+      "backend_tests_passed": 230,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "linux-x86_64-appimage",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed",
+      "shared_tools_container_build_health_and_missing_credentials_guard": "passed"
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718/job/122830269826",
+      "build": "passed",
+      "backend_tests_passed": 230,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "windows-x86_64-nsis",
+        "from": "0.1.1",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API and NSIS",
+        "old_client_gui_tested": false,
+        "old_installed_executable_version": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install_exact_candidate_binaries": "passed",
+        "installed_sidecar_startup_and_persistence": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed",
+        "desktop_gui_startup_and_restart": "requires separate manual GUI validation"
+      }
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718/job/122830269951",
+      "build": "passed",
+      "backend_tests_passed": 230,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "darwin-x86_64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718/job/122830270038",
+      "build": "passed",
+      "backend_tests_passed": 230,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "darwin-aarch64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    }
+  ],
+  "release_job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40692388718/job/122837778353",
+  "release": {
+    "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.2",
+    "published_at": "2026-10-28T13:14:25Z",
+    "is_latest": true,
+    "assets_count": 12,
+    "all_asset_bytes_downloaded_and_sha256_verified": true,
+    "manifest_and_release_notes_match_tag_source": true,
+    "four_platform_urls_and_version_bound_signatures_match_assets": true,
+    "assets": [
+      {
+        "name": "SHA256SUMS.txt",
+        "bytes": 1129,
+        "sha256": "150182bf71faa7680715ea92d14981a28e8b6f4245dda61d93bf4b63860496cd",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SHA256SUMS.txt"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-aarch64-app.app.tar.gz",
+        "bytes": 25611740,
+        "sha256": "06481ce78920d45eafcb9bf687ac9a54342d1b6a5876b7428aa800b8ff128d95",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-aarch64-app.app.tar.gz"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-aarch64-app.app.tar.gz.sig",
+        "bytes": 429,
+        "sha256": "262b5ccde0decc3036cb73d2192904ad56e28194db4dd8eec827fc4b888a2e1b",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-aarch64-app.app.tar.gz.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-aarch64-app.dmg",
+        "bytes": 25549756,
+        "sha256": "9c2b8268be589ea84b52bbb94a64d7f3ebb9d6d48688c8f7fd8cab9b924830ef",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-aarch64-app.dmg"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-x86_64-app.app.tar.gz",
+        "bytes": 26804099,
+        "sha256": "c564df7d4f283cc5dfb067f6032d6b68f7acdb099ed0f4ebd2db9abd2a003a65",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-x86_64-app.app.tar.gz"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-x86_64-app.app.tar.gz.sig",
+        "bytes": 429,
+        "sha256": "05fa6fb4163596fe6f85403fb6e00efbca53720dcf121965ad07f5551887cefc",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-x86_64-app.app.tar.gz.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.2_darwin-x86_64-app.dmg",
+        "bytes": 26775993,
+        "sha256": "fb5e2afc215b029be11064e7b444b7fa0f877f6843d8e9dd413d7dfbfda3c612",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_darwin-x86_64-app.dmg"
+      },
+      {
+        "name": "SuperTravel_0.1.2_linux-x86_64-appimage.AppImage",
+        "bytes": 122759672,
+        "sha256": "9b5d403f39293f39587fef9ac4d59b6c4627275129c395bc0a3c2b6509d0b643",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_linux-x86_64-appimage.AppImage"
+      },
+      {
+        "name": "SuperTravel_0.1.2_linux-x86_64-appimage.AppImage.sig",
+        "bytes": 445,
+        "sha256": "2e66bc54f8c918aab7434c775f9c57d3384e1a393a7fce045a7e2b978fce12ee",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_linux-x86_64-appimage.AppImage.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.2_windows-x86_64-nsis.exe",
+        "bytes": 25646316,
+        "sha256": "833e5ab5ccb01ab103da3b18e53090c50772d9dc40e1a04bd8087d6a5a6d5a96",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_windows-x86_64-nsis.exe"
+      },
+      {
+        "name": "SuperTravel_0.1.2_windows-x86_64-nsis.exe.sig",
+        "bytes": 442,
+        "sha256": "6bfe0d9ad2ee48048fa3050c76247e469831aab2c93d817d63510839a5c1e8c7",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/SuperTravel_0.1.2_windows-x86_64-nsis.exe.sig"
+      },
+      {
+        "name": "latest.json",
+        "bytes": 4019,
+        "sha256": "9c9d8f56d57b68d8866974ab5a8febf3c4adf30d6063716dd26d04eb0434f51b",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.2/latest.json"
+      }
+    ]
+  }
+}
