@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import ssl
+from socketserver import TCPServer
 import threading
 import time
 
@@ -77,6 +78,13 @@ def model_reply(payload):
             ]} for day in (1, 2)]
         return reply(name="submit_trip", arguments={"summary": "固定离线测试行程", "days": days})
     return reply("固定离线测试行程已生成；时间与费用仍需确认。")
+
+
+class LoopbackServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Fixed loopback fixtures do not need HTTPServer's potentially slow reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = "localhost", self.server_address[1]
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -192,8 +200,8 @@ def change_trust(root, restore=False):
 def run(root):
     state = {"fixture": True, "mode": "ok", "modelCalls": 0, "searchCalls": 0, "routeCalls": 0}
     lock = threading.Lock()
-    model = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
-    tools = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
+    model = LoopbackServer(("127.0.0.1", 0), FixtureHandler)
+    tools = LoopbackServer(("127.0.0.1", 0), FixtureHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(root / "ca.pem", root / "fixture-key.pem")
     model.socket = context.wrap_socket(model.socket, server_side=True)

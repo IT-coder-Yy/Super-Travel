@@ -175,14 +175,14 @@ jobs:
         if: runner.os == 'Windows' && steps.build.outputs.signed == 'true'
         env:
           STA_UPDATER_PUBLIC_KEY: ${{ vars.STA_UPDATER_PUBLIC_KEY }}
-        run: python scripts/smoke-windows-update.py --artifact-dir artifacts/${{ matrix.target }} --driver src-tauri/target/${{ matrix.target }}/release/examples/updater-probe.exe --old-version 0.1.1
+        run: python scripts/smoke-windows-update.py --artifact-dir artifacts/${{ matrix.target }} --driver src-tauri/target/${{ matrix.target }}/release/examples/updater-probe.exe --old-version 0.1.2
       - name: Verify native update and preserved data
         if: runner.os != 'Windows' && steps.build.outputs.signed == 'true'
         env:
           STA_UPDATER_PUBLIC_KEY: ${{ vars.STA_UPDATER_PUBLIC_KEY }}
         shell: bash
         run: |
-          args=(python scripts/smoke-native-update.py --artifact-dir "artifacts/${{ matrix.target }}" --driver "$PWD/src-tauri/target/${{ matrix.target }}/release/examples/updater-probe")
+          args=(python scripts/smoke-native-update.py --artifact-dir "artifacts/${{ matrix.target }}" --driver "$PWD/src-tauri/target/${{ matrix.target }}/release/examples/updater-probe" --old-version 0.1.2)
           if [[ "$RUNNER_OS" == Linux ]]; then
             xvfb-run -a dbus-run-session -- "${args[@]}"
           else

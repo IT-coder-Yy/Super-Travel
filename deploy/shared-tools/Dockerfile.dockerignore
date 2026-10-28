@@ -3,6 +3,7 @@
 backend/**
 !backend/requirements.txt
 !backend/external_tools.py
+!backend/amap_tools.py
 !backend/mcp_client.py
 !backend/search_tools.py
 !backend/shared_tools_server.py

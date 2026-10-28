@@ -214,7 +214,7 @@ def build(target, work):
     finally:
         run(sys.executable, FIXTURE, "--restore", work)
     assert sha(original_sidecar) == hashes["productionSidecar"], "Production sidecar must not be replaced by the fixture variant"
-    identifier = "com.supertravel.desktop.nativegui." + uuid.uuid4().hex
+    identifier = "com.supertravel.desktop.nativegui.run" + uuid.uuid4().hex
     overrides = {"identifier": identifier, "app": {"security": {"capabilities": ["main-window", {"identifier": "native-gui-driver", "windows": ["main"], "permissions": ["wdio-webdriver:default"]}]}}, "bundle": {"active": False}}
     env = {**os.environ, "TAURI_CONFIG": json.dumps(overrides)}
     run("cargo", "build", "--manifest-path", "src-tauri/Cargo.toml", "--release", "--locked", "--target", target, "--features", "native-gui-tests,tauri/custom-protocol", env=env)
@@ -264,6 +264,15 @@ def business(view, fixture, report):
         paths = list((data_dir / "conversations").glob("*.json"))
         assert len(paths) == 1, "Isolated native app must have exactly one test conversation"
         return json.loads(paths[0].read_text(encoding="utf-8"))
+
+    send("你好")
+    view.contains("body", "固定测试回复：你好，旅行者。")
+    assert view.js("return document.querySelectorAll('.activity').length") == 0
+    send("我想旅行")
+    view.contains('[aria-label="Agent 任务进度"]', "需要你补充信息")
+    view.contains("body", "你准备去哪个城市、旅行几天？")
+    assert view.js("return document.querySelectorAll('.activity').length") == 0
+    checks.append("planner_chat_and_clarification_before_generation")
 
     send("生成固定行程，杭州两天")
     view.contains(".activity-heading", "固定测试公园")

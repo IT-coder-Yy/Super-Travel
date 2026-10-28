@@ -186,6 +186,17 @@ fn status(preferences: Preferences, key: Result<Option<StoredKey>, String>) -> M
     }
 }
 
+fn local_client() -> Result<reqwest::Client, String> {
+    // The updater enables reqwest's rustls-no-provider feature; model sync may run first.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| SYNC_ERROR.into())
+}
+
 async fn configure_backend(
     connection: &Connection,
     preferences: &Preferences,
@@ -211,12 +222,7 @@ async fn configure_backend(
     struct Configured {
         configured: bool,
     }
-    let response = reqwest::Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|_| SYNC_ERROR)?
+    let response = local_client()?
         .post(url.join("api/model/configure").map_err(|_| SYNC_ERROR)?)
         .bearer_auth(&connection.token)
         .json(&serde_json::json!({
@@ -347,6 +353,11 @@ pub async fn delete_model_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_model_sync_does_not_require_a_prior_update_check() {
+        assert!(local_client().is_ok());
+    }
 
     #[test]
     fn endpoints_must_be_https_without_embedded_secrets() {

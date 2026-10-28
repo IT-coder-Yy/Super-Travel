@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import ssl
+import socket
 import subprocess
 import sys
 import time
@@ -23,17 +24,28 @@ from backend.trips import TripResearch
 def live_fixture(tmp_path_factory):
     root = tmp_path_factory.mktemp("native-fixture")
     fixture.prepare(root)
-    process = subprocess.Popen([sys.executable, str(Path(fixture.__file__).resolve()), "--run", str(root)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    error_path = root / "fixture-stderr.log"
+    error_log = error_path.open("w", encoding="utf-8")
+    process = subprocess.Popen([sys.executable, str(Path(fixture.__file__).resolve()), "--run", str(root)], stdout=subprocess.DEVNULL, stderr=error_log)
     try:
         deadline = time.monotonic() + 10
         while not (root / "ready.json").exists():
-            assert process.poll() is None and time.monotonic() < deadline
+            assert process.poll() is None and time.monotonic() < deadline, "Fixture startup failed or timed out: " + error_path.read_text(encoding="utf-8")
             time.sleep(0.05)
         ready = json.loads((root / "ready.json").read_text())
         yield root, ready
     finally:
         process.terminate()
         process.wait(timeout=10)
+        error_log.close()
+
+
+def test_loopback_server_never_performs_reverse_dns(monkeypatch):
+    def reject_dns(*_args):
+        raise AssertionError("Fixed loopback servers must not resolve DNS")
+    monkeypatch.setattr(socket, "getfqdn", reject_dns)
+    with fixture.LoopbackServer(("127.0.0.1", 0), fixture.FixtureHandler) as server:
+        assert server.server_name == "localhost" and server.server_port > 0
 
 
 def model(root, ready):
