@@ -75,6 +75,17 @@ class ReleaseTests(unittest.TestCase):
             (part/"platform.json").write_text(json.dumps(metadata))
             with self.assertRaises(ValueError): release.merge(root/"collected",root/"release")
 
+    def test_merge_cli_uses_the_same_notes_as_the_github_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for target in release.TARGETS:
+                self.make_part(root, target)
+            subprocess.run([sys.executable, str(ROOT / "scripts/prepare-release.py"),
+                            "--merge", str(root / "collected"), "--output", str(root / "release")],
+                           cwd=ROOT, check=True, capture_output=True, text=True)
+            manifest = json.loads((root / "release/latest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["notes"], (ROOT / "docs/RELEASE_NOTES.md").read_text(encoding="utf-8").strip())
+
 if __name__=="__main__":
     subprocess.run(["node","--test","scripts/configure-updater.test.mjs","scripts/configure-tools.test.mjs","scripts/tools-dev.test.mjs"],cwd=ROOT,check=True)
     subprocess.run([sys.executable,"scripts/test-windows-update.py"],cwd=ROOT,check=True)

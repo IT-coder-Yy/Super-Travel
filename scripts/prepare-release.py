@@ -104,7 +104,9 @@ def main():
     parser.add_argument("--merge", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if args.merge: result = merge(args.merge, args.output)
+    if args.merge:
+        notes = (ROOT / "docs/RELEASE_NOTES.md").read_text(encoding="utf-8").strip()
+        result = merge(args.merge, args.output, notes=notes)
     elif args.target and args.bundle_dir and args.base_url: result = collect(args.bundle_dir, args.target, args.version, args.base_url, args.output)
     else: parser.error("Use --merge, or --target + --bundle-dir + --base-url")
     print(f"Prepared {result.get('platform','all platforms')} version {result['version']} in {args.output}")
