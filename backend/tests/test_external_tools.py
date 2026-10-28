@@ -121,6 +121,7 @@ def test_status_is_local_only_and_does_not_expose_keys(tmp_path, monkeypatch):
     for key in KEY_NAMES:
         monkeypatch.setenv(key, "private-fixture-key")
     monkeypatch.delenv("STA_MCP_URL", raising=False)
+    monkeypatch.delenv("STA_SHARED_TOOLS_URL", raising=False)
     app = create_app(tmp_path, "fixture-token")
     with TestClient(app, headers={"Authorization": "Bearer fixture-token"}) as client:
         response = client.get("/api/tools/status")

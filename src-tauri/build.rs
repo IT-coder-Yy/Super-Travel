@@ -1,4 +1,9 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=STA_SHARED_TOOLS_URL");
+    println!(
+        "cargo:rustc-env=STA_SHARED_TOOLS_URL={}",
+        std::env::var("STA_SHARED_TOOLS_URL").unwrap_or_default()
+    );
     println!(
         "cargo:rustc-env=STA_TARGET_TRIPLE={}",
         std::env::var("TARGET").unwrap()

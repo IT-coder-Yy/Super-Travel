@@ -76,6 +76,12 @@ jobs:
         run: python -m pip install -r backend/requirements-dev.txt
       - run: python -m pytest backend/tests -q
       - run: python scripts/test-platform.py
+      - name: Build isolated shared tools service image
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          docker build -f deploy/shared-tools/Dockerfile -t supertravel-tools:check .
+          docker run --rm --read-only --tmpfs /tmp supertravel-tools:check python -c 'from fastapi.testclient import TestClient; from backend.shared_tools_server import create_app; c=TestClient(create_app()); assert c.get("/healthz").json()=={"ok":True}; assert c.get("/v1/tools").status_code==503; assert all(not p["configured"] for p in c.get("/v1/status").json()["providers"]); print("Shared tools image health and missing-credentials guard passed")'
       - name: Build native app and smoke-test startup
         id: build
         env:
@@ -83,6 +89,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           STA_UPDATER_PUBLIC_KEY: ${{ vars.STA_UPDATER_PUBLIC_KEY }}
           STA_UPDATE_ENDPOINT: ${{ vars.STA_UPDATE_ENDPOINT }}
+          STA_SHARED_TOOLS_URL: ${{ vars.STA_SHARED_TOOLS_URL }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: node scripts/ci-build.mjs ${{ matrix.target }} ${{ matrix.bundles }}
       - name: Native Rust unit tests
@@ -162,8 +169,13 @@ jobs:
           [[ "$output" == 'SUPERTRAVEL_CREDENTIAL_PROBE_OK:linux' ]]
           SH
       - name: Build isolated native updater probe
-        if: runner.os != 'Windows' && steps.build.outputs.signed == 'true'
+        if: steps.build.outputs.signed == 'true'
         run: cargo build --manifest-path src-tauri/Cargo.toml --example updater-probe --release --locked --target ${{ matrix.target }}
+      - name: Verify Windows native update and preserved data
+        if: runner.os == 'Windows' && steps.build.outputs.signed == 'true'
+        env:
+          STA_UPDATER_PUBLIC_KEY: ${{ vars.STA_UPDATER_PUBLIC_KEY }}
+        run: python scripts/smoke-windows-update.py --artifact-dir artifacts/${{ matrix.target }} --driver src-tauri/target/${{ matrix.target }}/release/examples/updater-probe.exe --old-version 0.1.1
       - name: Verify native update and preserved data
         if: runner.os != 'Windows' && steps.build.outputs.signed == 'true'
         env:
@@ -223,7 +235,7 @@ jobs:
           PY
           )"
           case "$release_state" in
-            missing) gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "SuperTravel $GITHUB_REF_NAME" --notes "桌面骨架验证版本。包含 Windows、macOS（Apple Silicon / Intel）、Linux 安装包及签名更新。当前界面为示例行程，旅行模型与真实地图服务尚未接入。macOS 包尚未公证，首次打开可能需要系统设置允许。" ;;
+            missing) gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "SuperTravel $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md ;;
             draft) ;;
             published) echo "Release already published; refusing to replace assets." >&2; exit 1 ;;
             *) echo "Unexpected release state; refusing to upload." >&2; exit 1 ;;

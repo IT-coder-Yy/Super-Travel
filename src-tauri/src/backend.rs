@@ -151,6 +151,8 @@ impl Backend {
         let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
         let version = app.package_info().version.to_string();
         let mut command = backend_command()?;
+        #[cfg(not(debug_assertions))]
+        command.env("STA_SHARED_TOOLS_URL", env!("STA_SHARED_TOOLS_URL"));
         command
             .args(["--host", "127.0.0.1", "--port", "0", "--data-dir"])
             .arg(&data_dir)

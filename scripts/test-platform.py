@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -75,5 +76,6 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(ValueError): release.merge(root/"collected",root/"release")
 
 if __name__=="__main__":
-    subprocess.run(["node","--test","scripts/configure-updater.test.mjs"],cwd=ROOT,check=True)
+    subprocess.run(["node","--test","scripts/configure-updater.test.mjs","scripts/configure-tools.test.mjs"],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,"scripts/test-windows-update.py"],cwd=ROOT,check=True)
     unittest.main()

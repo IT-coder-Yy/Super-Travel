@@ -31,3 +31,27 @@
 - 前端在原生关闭和更新之前等待 JSON 保存；保存失败保持窗口打开。
 - Rust 关闭 Python stdin，请求服务正常结束；Windows JobObject 同时管理 PyInstaller 子进程，主程序异常结束时清理后台进程。
 - 更新只替换程序，本地会话目录独立。未实现通用数据库迁移、任意断电自动回滚或双 Agent 业务执行，不能用骨架演练声称这些能力完成。
+
+## Windows 0.1.1 → 0.1.2：发布前与发布后分开验收
+
+正式 0.1.1 的更新地址已编译到程序中，指向 GitHub `latest.json`。0.1.2 未公开发布时，不能用该旧程序的“检查更新”按钮发现候选包；不要为演练修改旧 Release、生产清单或 TLS。已有 `docs/native-update/windows-x86_64.json` 只证明 0.1.0 → 0.1.1，不能覆盖这次升级。
+
+发布前，Windows 签名构建完成后，可在一次性的 GitHub-hosted Windows runner 执行：
+
+```powershell
+python scripts/test-windows-update.py
+cargo build --manifest-path src-tauri/Cargo.toml --example updater-probe --release --locked --target x86_64-pc-windows-msvc
+python scripts/smoke-windows-update.py --artifact-dir artifacts/x86_64-pc-windows-msvc --driver src-tauri/target/x86_64-pc-windows-msvc/release/examples/updater-probe.exe --old-version 0.1.1
+```
+
+验证步骤只需要 `STA_UPDATER_PUBLIC_KEY` 公钥，不传签名私钥。脚本从公开 0.1.1 Release 下载并核对 SHA256，在 `RUNNER_TEMP` 安装旧版，创建中文、空格路径下的会话、行程、草稿、收藏和非秘密目录偏好，再调用锁定的真实 Tauri updater：先拒绝坏签名包及截断下载，确认旧安装和数据未变，最后验签并通过 NSIS 安装当前候选包。Windows 插件启动安装器后会直接退出，所以脚本继续核对新程序版本、主程序及 Python 服务与本次构建的 SHA256 一致、已安装服务可运行，并检查数据和目录配置字节保留。成功后才写 `windows-update-report.json`。
+
+该探针不编入客户端。报告明确 `old_client_gui_tested: false`，不把预发布原生安装检查写成旧客户端按钮更新或桌面自动重启检查。脚本拒绝本地和 self-hosted runner：即使指定独立 `/D` 目录，NSIS 仍会更新当前用户安装注册信息，不能仅靠临时文件夹保护真实用户的安装登记。行为已按 [Tauri CLI 2.12.4 的 NSIS 模板](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi) 和锁定 updater 2.14.0 源码核对。
+
+发布后，使用正式 0.1.1 的独立测试安装执行真实 GUI 升级：
+
+1. 先确认没有用户正在运行的 SuperTravel，保存测试安装的版本、文件哈希；备份现有 `desktop.json` 的原始字节或“原本不存在”状态，以及受影响的安装登记和快捷方式。只操作这一非秘密偏好文件，不读取模型凭据或共享工具凭据。
+2. 使用独立 WebView 数据目录和中文、空格测试数据目录，准备已保存会话、正式行程、未应用草稿、收藏和消息。Windows Tauri 使用系统 Known Folder，不能把修改 `APPDATA` 环境变量当作可靠隔离；临时目录偏好结束后必须恢复。
+3. 通过受支持的 Windows UI API 点击“检查更新”，核对发现 0.1.2，再点击“保存并更新”。记录下载、安装与重新启动的实际结果；若需手动重新打开，必须如实记录。
+4. 核对界面及可执行文件版本 0.1.2、后端使用的测试数据目录、会话业务数据 deep-equal 和目录偏好 byte-identical。关闭本次测试进程，恢复原偏好、登记与快捷方式，再确认原安装及用户数据未变。
+5. 单独保存本轮 0.1.1 → 0.1.2 记录，保留 0.1.0 → 0.1.1 历史证据。正式共享配置若改变安装包，前一候选包的演练不能替代最终包验收。

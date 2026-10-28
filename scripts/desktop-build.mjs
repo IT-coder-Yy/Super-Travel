@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configureUpdater } from './configure-updater.mjs';
+import { sharedToolsUrl } from './configure-tools.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
@@ -21,6 +22,7 @@ function run(command, params) {
 }
 
 try {
+  process.env.STA_SHARED_TOOLS_URL = sharedToolsUrl(process.env);
   const config = await configureUpdater();
   run(python, ['scripts/generate-icons.py']);
   run(python, ['scripts/build-sidecar.py', ...targetArgs]);

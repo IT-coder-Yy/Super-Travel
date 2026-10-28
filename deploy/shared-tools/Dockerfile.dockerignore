@@ -1,0 +1,14 @@
+**
+!backend
+backend/**
+!backend/requirements.txt
+!backend/external_tools.py
+!backend/mcp_client.py
+!backend/search_tools.py
+!backend/shared_tools_server.py
+!deploy
+deploy/**
+!deploy/shared-tools
+deploy/shared-tools/**
+!deploy/shared-tools/Dockerfile
+!deploy/shared-tools/Dockerfile.dockerignore

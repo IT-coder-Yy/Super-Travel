@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { sharedToolsUrl, verifySharedTools } from './configure-tools.mjs';
 const [target, bundles] = process.argv.slice(2);
 if (!target || !bundles) throw new Error('Usage: node scripts/ci-build.mjs <target-triple> <bundles>');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
@@ -8,6 +9,8 @@ const release = (process.env.GITHUB_REF || '').startsWith('refs/tags/');
 const signed = Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY && process.env.STA_UPDATER_PUBLIC_KEY && process.env.STA_UPDATE_ENDPOINT);
 if (release && (!signed || process.env.GITHUB_REF_NAME !== `v${version}`)) throw new Error('Tag release requires matching package version, signing secret, public key and endpoint.');
 const env = { ...process.env };
+env.STA_SHARED_TOOLS_URL = sharedToolsUrl(env);
+if (release) await verifySharedTools(env.STA_SHARED_TOOLS_URL);
 if (!signed) { delete env.STA_UPDATER_PUBLIC_KEY; delete env.STA_UPDATE_ENDPOINT; }
 function run(command,args) {
   const result=spawnSync(command,args,{stdio:'inherit',env});

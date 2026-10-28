@@ -11,8 +11,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agents import AgentSession
-from backend.mcp_client import McpClient
+from backend.mcp_client import McpClient, ToolError
 from backend.external_tools import ExternalTools
+from backend.shared_tools import SharedTools
 from backend.model import ModelClient, ModelConfig, ModelError
 
 
@@ -42,7 +43,8 @@ class AgentService:
         if key:
             self.model = ModelClient(ModelConfig(self.base_url, key, self.model_name))
         self.tools_url = os.environ.get("STA_MCP_URL", "")
-        self.tools = McpClient(self.tools_url) if self.tools_url else ExternalTools()
+        shared_url = os.environ.get("STA_SHARED_TOOLS_URL", "")
+        self.tools = McpClient(self.tools_url) if self.tools_url else SharedTools(shared_url) if shared_url else ExternalTools()
         self.sessions: dict[UUID, AgentSession] = {}
         self.turns: dict[UUID, asyncio.Task] = {}
         self.failed_turns: dict[UUID, str] = {}
@@ -254,14 +256,22 @@ class AgentService:
 
         @router.get("/tools/status")
         async def tool_status():
+            if isinstance(self.tools, SharedTools):
+                try:
+                    return {"providers": await self.tools.read_status()}
+                except ToolError as error:
+                    raise ModelError(error.code, error.message) from None
             return {"providers": self.tools.status() if isinstance(self.tools, ExternalTools) else []}
 
         @router.post("/tools/check")
         async def check_tools():
-            if isinstance(self.tools, ExternalTools):
+            if isinstance(self.tools, (ExternalTools, SharedTools)):
                 if not self.tools.configured:
                     raise self.error_type(409, "tools_unconfigured", "开发者尚未配置外部服务。")
-                return await self.tools.refresh()
+                try:
+                    return await self.tools.refresh()
+                except ToolError as error:
+                    raise ModelError(error.code, error.message) from None
             if not self.tools_url:
                 raise self.error_type(409, "tools_unconfigured", "开发者工具服务尚未配置。")
             try:
