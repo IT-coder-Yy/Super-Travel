@@ -188,6 +188,14 @@ jobs:
           else
             "${args[@]}"
           fi
+      - name: Preserve Windows update loader diagnostics
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-update-diagnostics
+          path: artifacts/${{ matrix.target }}/windows-update-diagnostics/
+          if-no-files-found: ignore
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}

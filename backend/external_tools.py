@@ -1,4 +1,4 @@
-"""Developer-managed external tools; no separately deployed gateway is required."""
+"""Official provider adapters shared by local development and the hosted relay."""
 from __future__ import annotations
 
 import asyncio

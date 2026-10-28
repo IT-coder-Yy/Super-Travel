@@ -1,0 +1,50 @@
+{
+  "checkedAt": "2026-10-28T11:16:35.485170+00:00",
+  "scope": "SharedTools HTTP adapter via in-process ASGI relay to actual official providers",
+  "publicDeploymentTested": false,
+  "modelCalls": 0,
+  "toolCalls": 1,
+  "toolCount": 26,
+  "providers": [
+    {
+      "id": "amap",
+      "configured": true,
+      "connection": "connected",
+      "toolCount": 11
+    },
+    {
+      "id": "baidu",
+      "configured": true,
+      "connection": "connected",
+      "toolCount": 11
+    },
+    {
+      "id": "tavily",
+      "configured": true,
+      "connection": "connected",
+      "toolCount": 2
+    },
+    {
+      "id": "serper",
+      "configured": true,
+      "connection": "unchecked",
+      "toolCount": 1
+    },
+    {
+      "id": "xhs",
+      "configured": true,
+      "connection": "unchecked",
+      "toolCount": 1
+    }
+  ],
+  "verifiedPlaceCount": 10,
+  "wgs84Places": true,
+  "result": "passed",
+  "httpRequests": [
+    "GET /v1/status",
+    "GET /v1/tools",
+    "POST /v1/call"
+  ],
+  "requestCredentialCheckPassed": true,
+  "logCredentialCheckPassed": true
+}
