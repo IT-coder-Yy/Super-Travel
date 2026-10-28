@@ -1,0 +1,111 @@
+{
+  "version": "0.1.2",
+  "commit": "ee03bbf737a1020615dcbe84195d9757a1cfc799",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40684418728",
+  "release_published": false,
+  "production_shared_tools_url_configured": false,
+  "old_client_gui_update_tested": false,
+  "scope": "Pre-release native packaging, system credentials, signed updater installation and preserved JSON. Production shared HTTPS deployment and the published old-client GUI update remain separate acceptance checks.",
+  "targets": [
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40684418728/job/122802997214",
+      "build": "passed",
+      "backend_tests_passed": 217,
+      "release_integrity_checks_passed": 19,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "windows-x86_64-nsis",
+        "from": "0.1.1",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API and NSIS",
+        "old_client_gui_tested": false,
+        "old_installed_executable_version": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install_exact_candidate_binaries": "passed",
+        "installed_sidecar_startup_and_persistence": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed",
+        "desktop_gui_startup_and_restart": "requires separate manual GUI validation"
+      },
+      "native_gui_update": "Not tested; requires published 0.1.2 and an actual old-client GUI update.",
+      "candidate_installer": {
+        "name": "SuperTravel_0.1.2_windows-x86_64-nsis.exe",
+        "sha256": "c70fb21e3b89e8d9a662ea72d2a373a685b6675aac12b89b5359fa943fbe9a0e",
+        "bytes": 25639565,
+        "published": false
+      }
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40684418728/job/122802997664",
+      "build": "passed",
+      "backend_tests_passed": 217,
+      "release_integrity_checks_passed": 19,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "darwin-x86_64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40684418728/job/122802997792",
+      "build": "passed",
+      "backend_tests_passed": 217,
+      "release_integrity_checks_passed": 19,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "darwin-aarch64-app",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40684418728/job/122802997999",
+      "build": "passed",
+      "backend_tests_passed": 217,
+      "release_integrity_checks_passed": 19,
+      "rust_unit_tests": "passed",
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_update": {
+        "platform": "linux-x86_64-appimage",
+        "from": "0.1.0",
+        "to": "0.1.2",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed",
+      "shared_tools_container_build_health_and_missing_credentials_guard": "passed"
+    }
+  ]
+}
