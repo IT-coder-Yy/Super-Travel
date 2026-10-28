@@ -11,7 +11,7 @@ Linux CI 安装系统中文字体 `fonts-noto-cjk`，截图必须能正常显示
 - 因多了测试驱动和 CA，这是同生产代码的原生 GUI 测试变体，不是与发布安装包逐字节相同的构建。最终安装包的启动、更新与数据保留仍由原有 native smoke/update 流程验收。
 - 驱动在真实 WebView 内派发 DOM 点击和输入事件，验证业务控件与原生渲染兼容性；不冒充真人物理键鼠、输入法或操作系统文件选择器的人工验收。
 
-报告：`artifacts/<target>/native-gui/report.json`。正常有五张实际 WebView 截图及 SHA-256；失败保留截图和 DOM 文本，CI 失败以阻止发布。日志 marker 为 `SUPERTRAVEL_NATIVE_GUI_REPORT:` 后接单行 JSON。独立上传 artifact 为 `native-gui-<target>`。
+报告：`artifacts/<target>/native-gui/report.json`。正常有五张实际 WebView 截图及 SHA-256；每张截图前验证工作台已挂载、开场动画消失、底层不再 inert，生成/重启恢复截图还必须等待真实底图瓦片加载且无加载/错误提示，避免把遮罩下的 DOM 断言误当成视觉通过。每张截图记录 `workspaceVisible` 与已加载瓦片数 `mapTilesLoaded`。失败保留截图和 DOM 文本，CI 失败以阻止发布。日志 marker 为 `SUPERTRAVEL_NATIVE_GUI_REPORT:` 后接单行 JSON。独立上传 artifact 为 `native-gui-<target>`。
 
 参考（2026-10-28 查证）：
 

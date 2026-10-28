@@ -136,8 +136,9 @@ class WebView:
         self.session = result["sessionId"]
         self.capabilities = result["capabilities"]
         self.command("/window/rect", {"width": 1440, "height": 960})
-        wait(lambda: self.js("return !!window.__TAURI_INTERNALS__ && document.querySelectorAll('.startup-intro').length === 0"), "native frontend and opening animation", 45)
+        wait(lambda: self.js("return !!window.__TAURI_INTERNALS__ && !!document.querySelector('.app-shell')"), "native frontend mounts", 45)
         wait(lambda: any(value in self.text(".storage-indicator") for value in ("本地服务已连接", "已保存到本机")), "production sidecar connects", 60)
+        self.workspace_visible()
         assert self.command("/url").startswith(("tauri://", "http://tauri.localhost", "https://tauri.localhost")), "Must use packaged assets, never Vite/browser preview"
 
     def close(self, graceful=False):
@@ -191,14 +192,31 @@ class WebView:
     def absent(self, selector):
         wait(lambda: self.js("return document.querySelectorAll(arguments[0]).length === 0", selector), f"{selector} closes")
 
+    def workspace_visible(self):
+        # Absence alone can pass before React mounts the three-second opening overlay.
+        wait(lambda: self.js("""
+            const app = document.querySelector('.app-shell');
+            if (!app || app.closest('[inert]') || document.querySelector('.startup-intro')) return false;
+            const rect = app.getBoundingClientRect(), style = getComputedStyle(app);
+            return rect.width > 0 && rect.height > 0 && style.visibility === 'visible' && style.display !== 'none';
+        """), "opening animation ends and workspace is visible", 45)
+
+    def map_loaded(self):
+        wait(lambda: self.js("""
+            return !document.querySelector('.real-map-status') &&
+                [...document.querySelectorAll('.real-map img.leaflet-tile-loaded')].some(tile => tile.complete && tile.naturalWidth > 0);
+        """), "real map tiles load without loading/error overlay", 45)
+
     def screenshot(self, name):
+        self.workspace_visible()
         data = base64.b64decode(self.command("/screenshot"), validate=True)
         assert data[:8] == b"\x89PNG\r\n\x1a\n", "Native screenshot must be PNG"
         width, height = struct.unpack(">II", data[16:24])
         assert width >= 900 and height >= 600, (width, height)
         path = self.output / name
         path.write_bytes(data)
-        return {"file": name, "sha256": sha(path), "width": width, "height": height}
+        tiles = self.js("return [...document.querySelectorAll('.real-map img.leaflet-tile-loaded')].filter(tile => tile.complete && tile.naturalWidth > 0).length")
+        return {"file": name, "sha256": sha(path), "width": width, "height": height, "workspaceVisible": True, "mapTilesLoaded": tiles}
 
 
 def build(target, work):
@@ -287,6 +305,7 @@ def business(view, fixture, report):
     wait(lambda: view.js("return document.querySelector('.real-map-marker.is-selected')?.getAttribute('aria-label')") == "查看固定测试博物馆", "map marker selects place")
     formal = saved()
     assert len(formal["data"]["days"]) == 2 and formal["data"]["draft"] is None
+    view.map_loaded()
     screenshots.append(view.screenshot("02-generated.png"))
     checks.append("planner_executor_generate_two_days_map_markers_and_selection")
 
@@ -334,6 +353,7 @@ def business(view, fixture, report):
     view.contains('[aria-label="行程费用"]', "¥12.50")
     assert saved()["data"] == before_restart["data"]
     wait(lambda: view.js("return document.querySelectorAll('.real-map-marker').length") == 2, "map restored after native restart")
+    view.map_loaded()
     screenshots.append(view.screenshot("05-restored.png"))
     checks.append("full_native_process_restart_restores_conversation_trip_map_and_costs")
     view.button("设置与更新")
