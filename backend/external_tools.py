@@ -6,12 +6,13 @@ import json
 import os
 
 from backend.mcp_client import McpClient, ToolError
+from backend.amap_tools import AmapTools
 from backend.search_tools import SearchTools
 
 
 KEY_NAMES = ("AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY")
 SERVICES = {
-    "amap": ("高德地图", "mcp", "AMAP_MAPS_API_KEY"),
+    "amap": ("高德地图", "api", "AMAP_MAPS_API_KEY"),
     "baidu": ("百度地图", "mcp", "BAIDU_MAP_API_KEY"),
     "tavily": ("Tavily", "mcp", "TAVILY_API_KEY"),
     "serper": ("Serper", "api", "SERPER_API_KEY"),
@@ -69,7 +70,7 @@ class ExternalTools:
         self.clients, configuration_errors = {}, {}
         # Keep credential destinations fixed; a configurable host must not receive shared keys by mistake.
         factories = {
-            "amap": lambda: McpClient("https://mcp.amap.com/mcp", auth_query={"key": keys["AMAP_MAPS_API_KEY"]}),
+            "amap": lambda: AmapTools(keys["AMAP_MAPS_API_KEY"]),
             "baidu": lambda: McpClient("https://mcp.map.baidu.com/mcp", auth_query={"ak": keys["BAIDU_MAP_API_KEY"]}),
             "tavily": lambda: McpClient("https://mcp.tavily.com/mcp/", headers={"Authorization": "Bearer " + keys["TAVILY_API_KEY"]}),
             "serper": lambda: SearchTools(keys["SERPER_API_KEY"]),
@@ -117,7 +118,10 @@ class ExternalTools:
                     raise result
                 state.update(connection="error", message=result.message if isinstance(result, ToolError) else "外部服务暂时无法连接，请稍后检查。")
                 continue
-            if provider in ("serper", "xhs"):
+            if provider == "amap" and isinstance(self.clients[provider], AmapTools):
+                state.update(connection="connected" if self.clients[provider].mcp_connected else "unchecked",
+                             message="地点和步行、驾车、公交算路使用高德官方 API，其余工具使用 MCP。目录可用不代表查询成功。")
+            elif provider in ("serper", "xhs"):
                 state["message"] = "公开搜索索引，不包含登录后笔记内容。" if provider == "xhs" else "通过官方 Serper 接口搜索公开网页，实际可用性见最近调用。"
             else:
                 state.update(connection="connected", message="工具列表已连接；不代表所有查询均有可用额度。")

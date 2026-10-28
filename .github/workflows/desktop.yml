@@ -74,7 +74,7 @@ jobs:
           PY
       - if: matrix.target != 'x86_64-apple-darwin'
         run: python -m pip install -r backend/requirements-dev.txt
-      - run: python -m pytest backend/tests -q
+      - run: python -m pytest backend/tests tests/native -q
       - run: python scripts/test-platform.py
       - name: Build isolated shared tools service image
         if: runner.os == 'Linux'

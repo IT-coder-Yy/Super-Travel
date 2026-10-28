@@ -1,0 +1,218 @@
+{
+  "checkedAt": "2026-10-28T15:01:50.018252+00:00",
+  "simulated": false,
+  "scope": "Production TripResearch -> SharedTools -> independent local relay -> official Amap REST; real POIs, original GCJ-02, walking route, and trip binding.",
+  "completed": false,
+  "modelCalls": 0,
+  "routes": [],
+  "priorMcpAttempt": {
+    "checkedAt": "2026-10-28T14:50:46.730493+00:00",
+    "simulated": false,
+    "scope": "Production SharedTools -> local relay -> official Amap MCP; actual POIs and routes.",
+    "completed": false,
+    "modelCalls": 0,
+    "routes": [],
+    "catalogConnected": true,
+    "schemas": {
+      "amap_maps_direction_driving": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "出发点经纬度，坐标格式为：经度，纬度"
+          },
+          "destination": {
+            "type": "string",
+            "description": "目的地经纬度，坐标格式为：经度，纬度"
+          }
+        },
+        "required": [
+          "origin",
+          "destination"
+        ]
+      },
+      "amap_maps_direction_transit_integrated": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "出发点经纬度，坐标格式为：经度，纬度"
+          },
+          "destination": {
+            "type": "string",
+            "description": "目的地经纬度，坐标格式为：经度，纬度"
+          },
+          "city": {
+            "type": "string",
+            "description": "公共交通规划起点城市"
+          },
+          "cityd": {
+            "type": "string",
+            "description": "公共交通规划终点城市"
+          }
+        },
+        "required": [
+          "origin",
+          "destination",
+          "city",
+          "cityd"
+        ]
+      },
+      "amap_maps_direction_walking": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "出发点经度，纬度，坐标格式为：经度，纬度"
+          },
+          "destination": {
+            "type": "string",
+            "description": "目的地经度，纬度，坐标格式为：经度，纬度"
+          }
+        },
+        "required": [
+          "origin",
+          "destination"
+        ]
+      },
+      "amap_maps_text_search": {
+        "type": "object",
+        "properties": {
+          "keywords": {
+            "type": "string",
+            "description": "查询关键字"
+          },
+          "city": {
+            "type": "string",
+            "description": "查询城市"
+          },
+          "citylimit": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否限制城市范围内搜索，默认不限制"
+          }
+        },
+        "required": [
+          "keywords"
+        ]
+      }
+    },
+    "errorCode": "tool_quota",
+    "calls": [
+      {
+        "tool": "amap_maps_text_search",
+        "arguments": {
+          "keywords": "断桥残雪",
+          "city": "杭州"
+        },
+        "status": "failed",
+        "code": "tool_quota"
+      }
+    ],
+    "actualToolCalls": 1
+  },
+  "officialRestProbe": {
+    "checkedAt": "2026-10-28T14:54:34.548437+00:00",
+    "endpoint": "https://restapi.amap.com/v3/direction/walking",
+    "documentation": "https://developer.amap.com/api/webservice/guide/api/direction",
+    "coordinateDocumentation": "https://developer.amap.com/faq/advisory/others/39838",
+    "coordinateSource": "Official walking service example, copied without conversion",
+    "coordinateSystem": "gcj02",
+    "arguments": {
+      "origin": "116.434307,39.90909",
+      "destination": "116.434446,39.90816"
+    },
+    "calls": 1,
+    "verified": true,
+    "httpStatus": 200,
+    "status": "1",
+    "info": "ok",
+    "infocode": "10000",
+    "result": {
+      "distance": "209",
+      "duration": "167"
+    }
+  },
+  "documentation": [
+    "https://developer.amap.com/api/webservice/guide/api-advanced/search",
+    "https://developer.amap.com/api/webservice/guide/api/direction",
+    "https://developer.amap.com/faq/advisory/others/39838"
+  ],
+  "availableTools": [
+    "amap_maps_text_search",
+    "amap_maps_direction_walking",
+    "amap_maps_direction_driving",
+    "amap_maps_direction_transit_integrated",
+    "amap_maps_direction_bicycling",
+    "amap_maps_distance",
+    "amap_maps_geo",
+    "amap_maps_regeocode",
+    "amap_maps_around_search",
+    "amap_maps_search_detail",
+    "amap_maps_weather"
+  ],
+  "errorCode": "tool_quota",
+  "calls": [
+    {
+      "tool": "amap_maps_text_search",
+      "arguments": {
+        "keywords": "断桥残雪",
+        "city": "杭州"
+      },
+      "status": "failed",
+      "code": "tool_quota"
+    }
+  ],
+  "actualToolCalls": 1,
+  "notCovered": [
+    "Live driving and transit calls (covered by regression tests)",
+    "Model-generated Amap itinerary (no model was called)"
+  ],
+  "regression": {
+    "command": "python -m pytest backend/tests/test_amap_tools.py backend/tests/test_external_tools.py backend/tests/test_trip_routes.py -q",
+    "passed": 38
+  },
+  "productionRouteProbe": {
+    "checkedAt": "2026-10-28T15:05:08.692891+00:00",
+    "completed": true,
+    "scope": "Production SharedTools -> local relay -> Amap REST -> TripResearch.route/submit -> JSON round trip",
+    "inputSource": "Official walking example GCJ-02 coordinates, with explicit acceptance-only IDs; NOT successful POI search results.",
+    "documentation": "https://developer.amap.com/api/webservice/guide/api/direction",
+    "actualRouteCalls": 1,
+    "modelCalls": 0,
+    "route": {
+      "fromPlaceId": "amap:acceptance-origin",
+      "toPlaceId": "amap:acceptance-destination",
+      "mode": "walking",
+      "status": "verified",
+      "reason": "查询时的路线估算，不是出行当天的交通保证。",
+      "queriedAt": "2026-10-28T15:05:11.282577+00:00",
+      "provider": "amap",
+      "durationMinutes": 3,
+      "distanceMeters": 209
+    },
+    "rawResponseSummary": {
+      "status": "1",
+      "info": "ok",
+      "infocode": "10000",
+      "arguments": {
+        "origin": "116.434307,39.909090",
+        "destination": "116.434446,39.908160"
+      },
+      "metrics": {
+        "duration": "167",
+        "distance": "209"
+      }
+    },
+    "binding": {
+      "jsonRoundTrip": true,
+      "incomingRouteMatches": true
+    }
+  },
+  "conclusion": {
+    "liveAmapWalkingRoute": true,
+    "livePoiToRoute": false,
+    "blocker": "Amap POI search reports tool_quota through both MCP and REST; no retries after either quota response.",
+    "actionRequired": "Restore developer POI search quota or configure an authorized Amap Web Service key with POI quota, then repeat the two-POI-to-route acceptance."
+  }
+}

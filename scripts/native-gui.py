@@ -142,7 +142,11 @@ class WebView:
 
     def close(self, graceful=False):
         if graceful and self.process and self.process.poll() is None:
-            self.command("/window", method="DELETE")
+            try:
+                self.command("/window", method="DELETE")
+            except (OSError, ValueError):
+                # The last window may exit before the HTTP response is flushed.
+                pass
             self.process.wait(timeout=20)
         stop(self.process)
         if self.log:
@@ -227,6 +231,7 @@ def business(view, fixture, report):
     report["url"] = view.command("/url")
     view.button("设置与更新")
     data_dir = Path(view.text(".path-field span"))
+    view.contains("body", "密钥保存在操作系统凭据库")
     view.label("模型服务地址", fixture["modelBaseUrl"])
     view.label("模型名称", fixture["model"])
     view.label("模型 API Key", fixture["apiKey"])
@@ -350,6 +355,9 @@ def main():
                 view = WebView(binary, output)
                 business(view, fixture, report)
                 view.close(graceful=True)
+                with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(fixture["toolsBaseUrl"] + "/test/status", timeout=5) as response:
+                    report["fixtureCalls"] = json.load(response)
+                assert all(report["fixtureCalls"][key] > 0 for key in ("modelCalls", "searchCalls", "routeCalls"))
         assert all(sha(path) == expected for path, expected in artifacts.items()), "Published native packages must remain byte-identical"
         report["checks"].append("production_release_assets_unchanged")
         report["status"] = "passed"
