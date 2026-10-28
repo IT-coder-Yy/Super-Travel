@@ -96,6 +96,6 @@
   "unrelatedLivePhotoTestSkipped": 1,
   "platformChecksPassed": 23,
   "frontendBuild": "passed",
-  "nativeBuild": "pending",
+  "nativeBuild": "passed on Windows x64, macOS Intel/Apple Silicon and Linux x64; see m5-native-validation.json",
   "releasePublished": false
 }

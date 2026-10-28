@@ -1,0 +1,238 @@
+{
+  "version": "0.1.3",
+  "commit": "14286ac82960dc409b384ca2635dfd662188c498",
+  "checked_at": "2026-10-28T14:34:07.052783+00:00",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40704649959",
+  "workflow_run_id": 40704649959,
+  "workflow_conclusion": "success",
+  "release_published_by_this_run": false,
+  "release_job": "skipped",
+  "scope": "四架构原生构建、系统凭据、签名更新、损坏包/中断拒绝与 JSON 保留；本报告不代表三平台完整旅行操作的 GUI 验收。",
+  "full_business_gui_flow_on_all_platforms_tested": false,
+  "business_flow_evidence": "真实 1/3/7 天及浏览器 UI 验收另行记录，不能替代原生三平台完整交互验收。",
+  "targets": [
+    {
+      "target": "aarch64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40704649959/job/122873368669",
+      "build": "passed",
+      "backend_tests_passed": 265,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests_passed": 6,
+      "system_credentials": {
+        "backend": "macOS Keychain",
+        "platform": "macos",
+        "production_entry_accessed": false,
+        "secret_values_logged": false,
+        "write_read_replace_delete": "passed"
+      },
+      "native_update": {
+        "platform": "darwin-aarch64-app",
+        "from": "0.1.0",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "artifact": {
+        "id": 12823542426,
+        "name": "desktop-aarch64-apple-darwin",
+        "zip_bytes": 51079696,
+        "zip_sha256": "0b6a44bfcd7fed9388d309d5f74d3357e22533473d518e43795993c19ebf1b40",
+        "github_artifact_digest_verified": true,
+        "files": [
+          {
+            "name": "SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz",
+            "bytes": 25628167,
+            "sha256": "338fd6f871d2d91d6789accaf6a655fe171fa3348b703584d831b373f2e8d237"
+          },
+          {
+            "name": "SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz.sig",
+            "bytes": 429,
+            "sha256": "8321c16b3e4df05085b5aa6342ef36c361cb69357849df02d80367733d7ca976"
+          },
+          {
+            "name": "SuperTravel_0.1.3_darwin-aarch64-app.dmg",
+            "bytes": 25567081,
+            "sha256": "6113b852a27c3d13da07f50516c990ab8275d00dd1e8382b17a695a84fb82cf5"
+          }
+        ]
+      },
+      "report_files": {
+        "platform.json": "caed52ede3c84d79b83ada94d404243e5891f2d25dde1d5cbea8c3a295ae9cd7",
+        "credential-report.json": "a1f16c2980868d9af6b62fccc078fd80932eab4a3d89f032923be314cf841235",
+        "native-update-report.json": "ca7bdb6333eb8e918211a3e62ec1d79a652c8f98dbf9fd6ef67aa93cda7b759d"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40704649959/job/122873369189",
+      "build": "passed",
+      "backend_tests_passed": 265,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests_passed": 6,
+      "system_credentials": {
+        "backend": "D-Bus Secret Service",
+        "platform": "linux",
+        "production_entry_accessed": false,
+        "secret_values_logged": false,
+        "write_read_replace_delete": "passed"
+      },
+      "native_update": {
+        "platform": "linux-x86_64-appimage",
+        "from": "0.1.0",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "artifact": {
+        "id": 12823073315,
+        "name": "desktop-x86_64-unknown-linux-gnu",
+        "zip_bytes": 122066231,
+        "zip_sha256": "834b4edc467f4c04dd0ebef895d846a0c189fc5f42446fe910f7931cd6c4d2f0",
+        "github_artifact_digest_verified": true,
+        "files": [
+          {
+            "name": "SuperTravel_0.1.3_linux-x86_64-appimage.AppImage",
+            "bytes": 122788344,
+            "sha256": "51959451b011077e9dfa2babe23c55ce95232598590fef3e413d3ea3bf6a4120"
+          },
+          {
+            "name": "SuperTravel_0.1.3_linux-x86_64-appimage.AppImage.sig",
+            "bytes": 445,
+            "sha256": "33e0026acc4bde88100a71a25e0b93968505b0c2d9f0de7ab40064c46c1023b5"
+          }
+        ]
+      },
+      "report_files": {
+        "platform.json": "4527302e936c122439d5169d7b5d319ad0691341320501f24da0ec31de2550ea",
+        "credential-report.json": "585227179c7bc52d972e343d527c71e0c53837f821f9f4d02c063ea5645eb47d",
+        "native-update-report.json": "74596a7c4f0d9cefdc60f0fd1b75c1cbb46fd2ea6b28eb79f3a95e44f6431928"
+      },
+      "native_startup_and_cleanup": "passed",
+      "shared_tools_container_health_and_missing_credentials_guard": "passed"
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40704649959/job/122873369200",
+      "build": "passed",
+      "backend_tests_passed": 265,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests_passed": 6,
+      "system_credentials": {
+        "backend": "macOS Keychain",
+        "platform": "macos",
+        "production_entry_accessed": false,
+        "secret_values_logged": false,
+        "write_read_replace_delete": "passed"
+      },
+      "native_update": {
+        "platform": "darwin-x86_64-app",
+        "from": "0.1.0",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "artifact": {
+        "id": 12824416736,
+        "name": "desktop-x86_64-apple-darwin",
+        "zip_bytes": 53505480,
+        "zip_sha256": "567192e55ac2513d02333eca69622473dac07615655a3863ab4dec88f65f44c1",
+        "github_artifact_digest_verified": true,
+        "files": [
+          {
+            "name": "SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz",
+            "bytes": 26820393,
+            "sha256": "d50781c4820ebc4827b6a8e23b32a3e1853e9e5f18976f1aae86d31f3fdfdbed"
+          },
+          {
+            "name": "SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz.sig",
+            "bytes": 429,
+            "sha256": "ce54494e065de7a401e386fdb51207061cba4819cca4daca8b10543af1e48f45"
+          },
+          {
+            "name": "SuperTravel_0.1.3_darwin-x86_64-app.dmg",
+            "bytes": 26797085,
+            "sha256": "a4815b3a14e4f1f3eb87029e9d61fa947e1d554a9b280112a4eb08b8d67d3a5d"
+          }
+        ]
+      },
+      "report_files": {
+        "platform.json": "0a060e8daa949d2609d8514cc38cd4f8cd1dc0b85557f60922bbfb16e2c35da5",
+        "credential-report.json": "a1f16c2980868d9af6b62fccc078fd80932eab4a3d89f032923be314cf841235",
+        "native-update-report.json": "87b2a46ee051eb0a4424b363d0f21f4b4320c4c53911fe7682f4aabc6e78ef59"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40704649959/job/122873369628",
+      "build": "passed",
+      "backend_tests_passed": 265,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests_passed": 6,
+      "system_credentials": {
+        "backend": "Windows Credential Manager",
+        "platform": "windows",
+        "production_entry_accessed": false,
+        "secret_values_logged": false,
+        "write_read_replace_delete": "passed"
+      },
+      "native_update": {
+        "platform": "windows-x86_64-nsis",
+        "from": "0.1.1",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API and NSIS",
+        "old_client_gui_tested": false,
+        "old_installed_executable_version": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install_exact_candidate_binaries": "passed",
+        "installed_sidecar_startup_and_persistence": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed",
+        "desktop_gui_startup_and_restart": "requires separate manual GUI validation"
+      },
+      "artifact": {
+        "id": 12822903587,
+        "name": "desktop-x86_64-pc-windows-msvc",
+        "zip_bytes": 25655014,
+        "zip_sha256": "640ce494e96a24494637d258df6552521a692b7112d200ef2470fccada44a66b",
+        "github_artifact_digest_verified": true,
+        "files": [
+          {
+            "name": "SuperTravel_0.1.3_windows-x86_64-nsis.exe",
+            "bytes": 25664301,
+            "sha256": "774230552e591c08b4ab3f04a14daad58ff782b224bf096075389975894ca93d"
+          },
+          {
+            "name": "SuperTravel_0.1.3_windows-x86_64-nsis.exe.sig",
+            "bytes": 442,
+            "sha256": "a331f97179f812f213f4c157f5baf1dd169a10522cb359caf763930f86859c33"
+          }
+        ]
+      },
+      "report_files": {
+        "platform.json": "bc9976221db9a1585e25e7fd96bad2512a937364e4502f4c998a4e842ffc1ac0",
+        "credential-report.json": "2962f6b393003b61530ca549c11a77c79fa5128866b7558a04353d2839d54a17",
+        "windows-update-report.json": "98b51ede7a9fff0aa2447d76a3855a48929f16b6c4a753b715303f9a63f0266a"
+      }
+    }
+  ]
+}
