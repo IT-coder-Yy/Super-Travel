@@ -269,9 +269,12 @@ def business(view, fixture, report):
     view.contains("body", "固定测试回复：你好，旅行者。")
     assert view.js("return document.querySelectorAll('.activity').length") == 0
     send("我想旅行")
-    view.contains('[aria-label="Agent 任务进度"]', "需要你补充信息")
     view.contains("body", "你准备去哪个城市、旅行几天？")
     assert view.js("return document.querySelectorAll('.activity').length") == 0
+    assert any(message.get("role") == "assistant" and "你准备去哪个城市、旅行几天？" in message.get("content", "") for message in saved()["data"]["messages"])
+    with view.opener.open(fixture["toolsBaseUrl"] + "/test/status", timeout=5) as response:
+        before_plan = json.load(response)
+    assert before_plan["searchCalls"] == before_plan["routeCalls"] == 0
     checks.append("planner_chat_and_clarification_before_generation")
 
     send("生成固定行程，杭州两天")
@@ -384,7 +387,8 @@ def main():
             view.close()
         stop(fixture_process)
         (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print("SUPERTRAVEL_NATIVE_GUI_REPORT:" + json.dumps(report, ensure_ascii=False, separators=(",", ":")), flush=True)
+        # Windows CI stdout can use a legacy code page even though report.json is UTF-8.
+        print("SUPERTRAVEL_NATIVE_GUI_REPORT:" + json.dumps(report, ensure_ascii=True, separators=(",", ":")), flush=True)
 
 
 if __name__ == "__main__":

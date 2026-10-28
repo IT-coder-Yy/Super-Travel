@@ -26,6 +26,8 @@
 
 需要 Node.js 22.12+ 和 Python 3.13。桌面开发还需要 Rust 1.90+ 与 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
 
+Linux 运行与界面验收需有中文字体；精简 Ubuntu/Debian 环境可安装 `fonts-noto-cjk`。
+
 ```powershell
 npm ci
 python -m venv backend/.venv

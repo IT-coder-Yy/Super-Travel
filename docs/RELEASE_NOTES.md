@@ -14,3 +14,5 @@
 - 提供 Windows x64、macOS Apple Silicon/Intel、Linux x64 安装包与签名更新。
 
 地图用于地点展示，不提供精确导航或营业、票价、预约保证。小红书能力为公开索引搜索，不是官方登录后笔记接口。macOS 安装包尚未 Apple 公证，首次打开可能需要在系统设置中允许。
+
+Linux 系统需具备中文字体；精简 Ubuntu/Debian 环境可安装 `fonts-noto-cjk`，避免中文显示为方框。

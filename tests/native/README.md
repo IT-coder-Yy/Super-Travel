@@ -2,6 +2,8 @@
 
 `scripts/native-gui.py --target <当前平台 Rust target>` 在一次性 CI runner 执行，使用真实系统 WebView：Windows WebView2、macOS WKWebView、Linux WebKitGTK。
 
+Linux CI 安装系统中文字体 `fonts-noto-cjk`，截图必须能正常显示中文；测试不向产品前端注入字体或改变其样式。用户在精简 Linux 系统上也需要可用的中文系统字体。
+
 - 点击原生工作台设置模型与工具服务；创建空会话；普通聊天直接回答、信息不足时澄清；生成两天行程；切换日期与点击地图点；聊天生成修改草稿；填写费用、验证时间冲突拦截；重新定位、应用保存；关闭整个原生进程后重启恢复。
 - 模型是明确标注的本机 HTTPS OpenAI 格式夹具，工具是本机 HTTP 共享工具夹具。调用生产 Python Agent、HTTP 与 JSON 存储模块。这里不证明真实模型回答质量、高德配额或公网底图始终可用；真实服务验证另行记录。
 - Rust `native-gui-tests` feature 只为测试加入 embedded WebDriver；生产默认构建不启用。前端保持正式 `dist`，没有浏览器 mock、前端测试分支或 Vite 服务。测试应用使用独立 identifier 和系统凭据服务名。
