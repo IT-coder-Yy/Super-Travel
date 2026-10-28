@@ -1,5 +1,6 @@
 """Guard/evidence tests only; actual OS installation is exercised on the Windows runner."""
 import importlib.util
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -39,6 +40,23 @@ class WindowsUpdateTests(unittest.TestCase):
         update.require_probe_result(subprocess.CompletedProcess([], 0, marker), "success")
         with self.assertRaises(subprocess.CalledProcessError):
             update.require_probe_result(subprocess.CompletedProcess([], 1, marker), "success")
+
+    def test_nsis_digest_checks_complete_bytes_with_the_packaged_bundle_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "desktop.exe"
+            executable.write_bytes(b"before__TAURI_BUNDLE_TYPE_VAR_UNKafter")
+            packaged = b"before__TAURI_BUNDLE_TYPE_VAR_NSSafter"
+            self.assertEqual(update.nsis_main_digest(executable), hashlib.sha256(packaged).hexdigest())
+            executable.write_bytes(b"changed__TAURI_BUNDLE_TYPE_VAR_UNKafter")
+            self.assertNotEqual(update.nsis_main_digest(executable), hashlib.sha256(packaged).hexdigest())
+
+    def test_nsis_digest_rejects_missing_or_ambiguous_bundle_markers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "desktop.exe"
+            for data in (b"other-binary", b"__TAURI_BUNDLE_TYPE_VAR_UNK" * 2):
+                executable.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    update.nsis_main_digest(executable)
 
 
 if __name__ == "__main__":

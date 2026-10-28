@@ -62,7 +62,7 @@ npm run desktop:build
 公开仓库：<https://github.com/IT-coder-Yy/SuperTravelAgent>。
 
 - GitHub Actions 构建 Windows x64、macOS arm64/x64、Linux x64。
-- 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT` 变量。
+- 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT`、`STA_SHARED_TOOLS_URL` 变量。共享工具地址必须已上线，四项工具凭据只配置在该服务的运行环境中。
 - 私钥不写入源码或客户端；本地生成的私钥仅存放在被 Git 忽略的 `.local/keys/`，请独立备份。丢失私钥会影响已安装版本的后续更新。
 - 更新流程：检查新版本 → 用户同意 → 保存当前会话/草稿 → 下载与验签 → 关闭 Python → 安装并重启。
 - 下载可尝试公开 GitHub 镜像，失败回 GitHub 原始资产；镜像与原始下载都必须经过同一公钥验签。镜像不用于发送模型 Key 或本地服务令牌。
@@ -78,6 +78,7 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 | `backend/` | Python 服务、JSON 存储与测试 |
 | `src-tauri/` | Rust 桌面生命周期、更新、用户数据目录 |
 | `scripts/` | 开发、sidecar 构建、发布清单与检查脚本 |
+| `deploy/shared-tools/` | 共享工具服务部署，用户无需自行安装 |
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 

@@ -6,6 +6,7 @@ or desktop restart: those are checked separately after the public Release exists
 from __future__ import annotations
 
 import argparse
+import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
@@ -48,6 +49,16 @@ def require_probe_result(result, mode: str) -> None:
         raise RuntimeError(f"The native updater did not prove its {mode} result")
 
 
+def nsis_main_digest(executable: Path) -> str:
+    # Tauri CLI 2.12.4 bundle.rs patches this token for NSIS, then restores the
+    # raw target/release EXE. Compare the complete expected packaged bytes.
+    data = executable.read_bytes()
+    marker = b"__TAURI_BUNDLE_TYPE_VAR_UNK"
+    if data.count(marker) != 1:
+        raise ValueError("Expected exactly one unpatched Tauri bundle type marker")
+    return hashlib.sha256(data.replace(marker, b"__TAURI_BUNDLE_TYPE_VAR_NSS", 1)).hexdigest()
+
+
 def exercise(args) -> dict:
     runner_temp = require_hosted_windows()
     metadata = json.loads((args.artifact_dir / "platform.json").read_text(encoding="utf-8"))
@@ -68,6 +79,7 @@ def exercise(args) -> dict:
         "supertravel-backend.exe": ROOT / "src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe",
     }
     expected_hashes = {name: native_update.release.digest(path) for name, path in expected.items()}
+    expected_hashes["supertravel-desktop.exe"] = nsis_main_digest(expected["supertravel-desktop.exe"])
     prefix = f"https://github.com/{args.repository}/releases/download/v{args.old_version}"
     with tempfile.TemporaryDirectory(prefix="supertravel-win-update-", dir=runner_temp) as temporary:
         root = Path(temporary)
@@ -151,6 +163,16 @@ def exercise(args) -> dict:
                 if installed and product_version(executable) == version:
                     break
                 if time.monotonic() >= deadline:
+                    actual = {name: {"expected": digest, "actual": native_update.release.digest(install / name) if (install / name).is_file() else None}
+                              for name, digest in expected_hashes.items()}
+                    installed_version = product_version(executable) if executable.is_file() else None
+                    print(json.dumps({"install_directory": str(install), "installed_version": installed_version, "files": actual}), flush=True)
+                    # Read only the matching disposable updater process; no environment dump.
+                    installer_name = f"SuperTravel-{version}-installer.exe".replace("'", "''")
+                    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                                    "Get-CimInstance Win32_Process | Where-Object Name -EQ '" + installer_name +
+                                    "' | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress"],
+                                   timeout=15, check=False)
                     raise RuntimeError("NSIS did not install the exact candidate binaries")
                 time.sleep(1)
             subprocess.run([sys.executable, str(ROOT / "scripts/smoke-sidecar.py"), str(install / "supertravel-backend.exe"), "--version", version], check=True, env=env, timeout=120)
