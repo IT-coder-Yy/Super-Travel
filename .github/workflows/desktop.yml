@@ -188,6 +188,24 @@ jobs:
           else
             "${args[@]}"
           fi
+      - name: Verify native WebView business workflow
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          args=(python scripts/native-gui.py --target "${{ matrix.target }}")
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a --server-args='-screen 0 1600x1200x24' dbus-run-session -- "${args[@]}"
+          else
+            "${args[@]}"
+          fi
+      - name: Upload native GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-gui-${{ matrix.target }}
+          path: artifacts/${{ matrix.target }}/native-gui/
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}

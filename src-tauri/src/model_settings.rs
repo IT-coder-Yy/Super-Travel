@@ -112,7 +112,11 @@ fn write_preferences(app: &AppHandle, preferences: &Preferences) -> Result<(), S
 }
 
 fn entry() -> Result<Entry, String> {
-    Entry::new("com.supertravel.desktop", "model-api-key").map_err(|_| STORAGE_ERROR.into())
+    #[cfg(not(feature = "native-gui-tests"))]
+    const SERVICE: &str = "com.supertravel.desktop";
+    #[cfg(feature = "native-gui-tests")]
+    const SERVICE: &str = "com.supertravel.desktop.native-gui-tests";
+    Entry::new(SERVICE, "model-api-key").map_err(|_| STORAGE_ERROR.into())
 }
 
 fn read_key() -> Result<Option<StoredKey>, String> {
