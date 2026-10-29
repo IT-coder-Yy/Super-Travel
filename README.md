@@ -1,10 +1,10 @@
 # SuperTravelAgent
 
-本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 [0.1.2 本机开发版](https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.2)，设置支持修改工具服务地址；验收状态见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md)、[真实行程闭环](docs/M3.md) 与 [0.1.2 发布验证](docs/M4.md)。
+本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 [0.1.3 本机开发版](https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.3)，包含双层 ReAct、路线耗时检查与活动费用；三平台业务界面、升级和发布核验见 [M5](docs/M5.md)。此前记录见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md)、[真实行程闭环](docs/M3.md) 与 [0.1.2 发布验证](docs/M4.md)。
 
 界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。主分支支持真实地点行程生成、地图展示、草稿修改和本地保存；新会话从空白开始，旧示例会话仍明确标注。
 
-0.1.3 开发进展：[双层 ReAct、相邻路线耗时检查与已知费用小计](docs/M5.md)。此开发版本尚未发布，公开安装包仍为上述 0.1.2。
+0.1.3 已完成 Windows x64、macOS Apple Silicon/Intel、Linux x64 原生业务界面验收及 0.1.2 → 0.1.3 升级验证；全部 12 项公开发布资产已下载并核验。证据与适用边界见 [发布验证记录](docs/v0.1.3-release-validation.json)。
 
 ![0.1.1 示例工作台参考界面](docs/preview.png)
 
@@ -19,7 +19,7 @@
 - 一份会话对应一个 JSON，保存采用临时文件、校验、备份与原子替换，修订冲突不会直接覆盖。
 - 损坏会话在设置中可扫描有效备份，确认后恢复；原件另存到数据目录的 `recovered-originals/`，其余历史仍可使用。
 - 双 Agent 使用显式 Python 流程；按会话记录计划与进度，支持取消和重启中断，旧结果不能覆盖新任务。模型 Key 通过系统凭据库保存，浏览器开发模式仅放后端内存。
-- 用户只填写模型 URL、模型名和 Key。0.1.2 先用于本机开发，桌面默认连接 `http://127.0.0.1:8080` 的工具服务，需开发者另行启动；设置中可修改服务地址。高德、百度、Tavily、Serper 和小红书公开搜索的凭据由开发者保存在工具服务端，不进入安装包，客户端不填写工具 Key。浏览器开发模式仍兼容直接连接外部服务；接入状态见 [外部服务](docs/EXTERNAL_SERVICES.md) 和 [0.1.2 发布检查](docs/M4.md)。
+- 用户只填写模型 URL、模型名和 Key。0.1.3 先用于本机开发，桌面默认连接 `http://127.0.0.1:8080` 的工具服务，需开发者另行启动；设置中可修改服务地址。高德、百度、Tavily、Serper 和小红书公开搜索的凭据由开发者保存在工具服务端，不进入安装包，客户端不填写工具 Key。浏览器开发模式仍兼容直接连接外部服务；接入状态见 [外部服务](docs/EXTERNAL_SERVICES.md) 和 [0.1.3 验收](docs/M5.md)。
 - Windows、macOS、Linux 分别在对应的 GitHub Actions 环境构建。安装包有无成功产出、原生升级是否实际验证，见 [验证记录](docs/VALIDATION.md)。
 
 ## 本地开发
@@ -95,4 +95,4 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 
-真实行程生成、地图展示、修改和保存已完成本机联调，验证范围见 [M3](docs/M3.md)。0.1.2 已发布，默认使用本机工具服务，尚未部署公共云服务；发布与 Windows 升级验证见 [M4](docs/M4.md)。
+真实行程生成、地图展示、修改和保存已完成本机联调及三平台原生业务验收，验证范围见 [M3](docs/M3.md) 与 [M5](docs/M5.md)。0.1.3 默认使用本机工具服务，尚未部署公共云服务；高德真实步行算路通过，当前开发凭据的地点检索仍受额度限制。

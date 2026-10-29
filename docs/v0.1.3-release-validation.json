@@ -1,0 +1,769 @@
+{
+  "version": "0.1.3",
+  "commit": "a0eb3ee5a34cc62ee9751470cae2b95148296f9c",
+  "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590",
+  "workflow_attempt": 1,
+  "defaultToolsUrl": "http://127.0.0.1:8080",
+  "cloudServiceDeployed": false,
+  "release_published": true,
+  "desktop_gui_upgrade_evidence": "Native CI updater APIs are distinct from the application business GUI acceptance recorded per target.",
+  "targets": [
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/job/123192781266",
+      "job_attempt": 1,
+      "build": "passed",
+      "python_backend_and_fixture_tests_passed": 285,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "rust_unit_tests_passed": 7,
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_business_gui": {
+        "schema": 1,
+        "target": "x86_64-unknown-linux-gnu",
+        "platform": "Linux",
+        "status": "passed",
+        "driver": "tauri-plugin-wdio-webdriver 1.5.0 / W3C",
+        "webview": "WebKitGTK",
+        "fixtures": "Local HTTPS OpenAI-format model and HTTP shared tools; not live provider acceptance",
+        "buildScope": "Production Rust builder, frontend dist, Python modules; test-only driver and fixture CA; not the byte-identical published installer",
+        "checks": [
+          "native_settings_model_keyring_and_shared_tools",
+          "create_empty_conversation_via_ui",
+          "planner_chat_and_clarification_before_generation",
+          "planner_executor_generate_two_days_map_markers_and_selection",
+          "chat_draft_does_not_overwrite_formal_costs_and_conflict_blocks_apply",
+          "resolve_changed_place_apply_save_json_no_model_key",
+          "full_native_process_restart_restores_conversation_trip_map_and_costs",
+          "production_release_assets_unchanged"
+        ],
+        "screenshots": [
+          {
+            "file": "01-empty.png",
+            "sha256": "1f6c96e77add0f4272c784d1352592a4c88e8d3831de6bb98b54ebca7efac2f9",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 0
+          },
+          {
+            "file": "02-generated.png",
+            "sha256": "c01b4d7a383e5ed06c16efdcafd58e92f09e1b466aa940c81ea047e2a884ee67",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "03-draft-conflict.png",
+            "sha256": "82199d11db08939f2ca7d09194103f9c3c8ddaf284cb8307ce0f760cf16dde83",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "04-saved.png",
+            "sha256": "d5a12185e8d5bf8d04c078c186c01f6bd911632dc4c8b4ca8aae97e00d58f38a",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          },
+          {
+            "file": "05-restored.png",
+            "sha256": "965da7718c246a0cbf988a2d1c2062c414816dab27e1c63e2e8d93c7340e41c6",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          }
+        ],
+        "build": {
+          "productionSidecar": "c01d49dfc09cc3a9546e5636360035d8f654f7d8c16c2afa2e64cd5bde84bb68",
+          "frontendAssets": {
+            "assets/app-icon-CIovqxe6.svg": "ee53e6987c0352500d1c2d11b8bc9ca8d40494f1f2d08481b13bfbd39f27e9e2",
+            "assets/index-CYy3Vioq.css": "01b029b7865d98c374ea32fddfa37e9e388350082e76d7b9f24a87add5fa270e",
+            "assets/index-CsJTtO_J.js": "23a084313f6dbccafc9aa27238e6028583ce64a86f64200827d35de7d620698d",
+            "index.html": "4db18531896f1a45c3e03cf1d0fc086f1c3fc1b54cb7e1935ca1722ff77420e6"
+          },
+          "testApp": "58749ec9bc6a14d93bc4d2c8e57581b698d8f92994307dd735e8303e6643ae8d",
+          "testSidecar": "6fc0f9b649e938bcadb87900e6fb9c769381b504a0e884aaf25c1caf55004faf",
+          "testIdentifier": "com.supertravel.desktop.nativegui.run79e9c0e8a5bb4f9e84c158a286a69e1d"
+        },
+        "capabilities": {
+          "acceptInsecureCerts": false,
+          "browserName": "webview",
+          "browserVersion": "unknown",
+          "pageLoadStrategy": "normal",
+          "platformName": "linux",
+          "setWindowRect": true,
+          "timeouts": {
+            "implicit": 0,
+            "pageLoad": 300000,
+            "script": 30000
+          }
+        },
+        "url": "tauri://localhost",
+        "fixtureCalls": {
+          "fixture": true,
+          "mode": "ok",
+          "modelCalls": 11,
+          "searchCalls": 2,
+          "routeCalls": 2
+        },
+        "artifact_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/artifacts/12863423917",
+        "report_and_all_screenshot_bytes_verified": true
+      },
+      "native_update": {
+        "platform": "linux-x86_64-appimage",
+        "from": "0.1.2",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed",
+      "shared_tools_container_build_health_and_missing_credentials_guard": "passed"
+    },
+    {
+      "target": "aarch64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/job/123192781397",
+      "job_attempt": 1,
+      "build": "passed",
+      "python_backend_and_fixture_tests_passed": 285,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "rust_unit_tests_passed": 7,
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_business_gui": {
+        "schema": 1,
+        "target": "aarch64-apple-darwin",
+        "platform": "Darwin",
+        "status": "passed",
+        "driver": "tauri-plugin-wdio-webdriver 1.5.0 / W3C",
+        "webview": "WKWebView",
+        "fixtures": "Local HTTPS OpenAI-format model and HTTP shared tools; not live provider acceptance",
+        "buildScope": "Production Rust builder, frontend dist, Python modules; test-only driver and fixture CA; not the byte-identical published installer",
+        "checks": [
+          "native_settings_model_keyring_and_shared_tools",
+          "create_empty_conversation_via_ui",
+          "planner_chat_and_clarification_before_generation",
+          "planner_executor_generate_two_days_map_markers_and_selection",
+          "chat_draft_does_not_overwrite_formal_costs_and_conflict_blocks_apply",
+          "resolve_changed_place_apply_save_json_no_model_key",
+          "full_native_process_restart_restores_conversation_trip_map_and_costs",
+          "production_release_assets_unchanged"
+        ],
+        "screenshots": [
+          {
+            "file": "01-empty.png",
+            "sha256": "d6ff9edbf2d57f681524431c8fe9fecdb5a42e1fe1b4ef60b35c76de39aeb110",
+            "width": 1440,
+            "height": 684,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 0
+          },
+          {
+            "file": "02-generated.png",
+            "sha256": "81801aaa6c6dfa564d93d72bb47bedd5113d47f7ae823039c818f29900a78498",
+            "width": 1440,
+            "height": 684,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 21
+          },
+          {
+            "file": "03-draft-conflict.png",
+            "sha256": "bcb8bca532d7a9a46530eadb9235181b73da59f0124b11afea88e0fcb782e8d6",
+            "width": 1440,
+            "height": 684,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 21
+          },
+          {
+            "file": "04-saved.png",
+            "sha256": "e7cd26015388c4d5ec0f028014a7ac1c42de0f8bdc4e765428f78902d210f7d7",
+            "width": 1440,
+            "height": 684,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          },
+          {
+            "file": "05-restored.png",
+            "sha256": "b8985c1b59cbdb087160f51b22d66b87ba781d6dbdad0d82199d40cea3813dd1",
+            "width": 1440,
+            "height": 684,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          }
+        ],
+        "build": {
+          "productionSidecar": "17ca35f5dafbe5153d1057762fc8b886a790ee90b04eda6185d192c8216db876",
+          "frontendAssets": {
+            "assets/app-icon-CIovqxe6.svg": "ee53e6987c0352500d1c2d11b8bc9ca8d40494f1f2d08481b13bfbd39f27e9e2",
+            "assets/index-CYy3Vioq.css": "01b029b7865d98c374ea32fddfa37e9e388350082e76d7b9f24a87add5fa270e",
+            "assets/index-CsJTtO_J.js": "23a084313f6dbccafc9aa27238e6028583ce64a86f64200827d35de7d620698d",
+            "index.html": "4db18531896f1a45c3e03cf1d0fc086f1c3fc1b54cb7e1935ca1722ff77420e6"
+          },
+          "testApp": "9ed1465ab38051c99b7fd7a8117ce7ef7e4188a7aa8bcd3ecda828ff7aa7e5b8",
+          "testSidecar": "acd010a3f80b01502b57cf2b94e70b2ae106e47369f495826866e64cbc7074d4",
+          "testIdentifier": "com.supertravel.desktop.nativegui.rund368f0844fda4aa983159ce75eab95c0"
+        },
+        "capabilities": {
+          "acceptInsecureCerts": false,
+          "browserName": "webview",
+          "browserVersion": "unknown",
+          "pageLoadStrategy": "normal",
+          "platformName": "macos",
+          "setWindowRect": true,
+          "timeouts": {
+            "implicit": 0,
+            "pageLoad": 300000,
+            "script": 30000
+          }
+        },
+        "url": "tauri://localhost",
+        "fixtureCalls": {
+          "fixture": true,
+          "mode": "ok",
+          "modelCalls": 11,
+          "searchCalls": 2,
+          "routeCalls": 2
+        },
+        "artifact_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/artifacts/12864241852",
+        "report_and_all_screenshot_bytes_verified": true
+      },
+      "native_update": {
+        "platform": "darwin-aarch64-app",
+        "from": "0.1.2",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    },
+    {
+      "target": "x86_64-pc-windows-msvc",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/job/123192781542",
+      "job_attempt": 1,
+      "build": "passed",
+      "python_backend_and_fixture_tests_passed": 285,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "rust_unit_tests_passed": 7,
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_business_gui": {
+        "schema": 1,
+        "target": "x86_64-pc-windows-msvc",
+        "platform": "Windows",
+        "status": "passed",
+        "driver": "tauri-plugin-wdio-webdriver 1.5.0 / W3C",
+        "webview": "WebView2",
+        "fixtures": "Local HTTPS OpenAI-format model and HTTP shared tools; not live provider acceptance",
+        "buildScope": "Production Rust builder, frontend dist, Python modules; test-only driver and fixture CA; not the byte-identical published installer",
+        "checks": [
+          "native_settings_model_keyring_and_shared_tools",
+          "create_empty_conversation_via_ui",
+          "planner_chat_and_clarification_before_generation",
+          "planner_executor_generate_two_days_map_markers_and_selection",
+          "chat_draft_does_not_overwrite_formal_costs_and_conflict_blocks_apply",
+          "resolve_changed_place_apply_save_json_no_model_key",
+          "full_native_process_restart_restores_conversation_trip_map_and_costs",
+          "production_release_assets_unchanged"
+        ],
+        "screenshots": [
+          {
+            "file": "01-empty.png",
+            "sha256": "5fd2b6fe7fdeedf9b194c5c6e673c542dd3333f5e69a560c2719f8350e16e885",
+            "width": 1424,
+            "height": 921,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 0
+          },
+          {
+            "file": "02-generated.png",
+            "sha256": "f535f09b38173f57a8f623d9263a5cf57a95746fb99cd23c11359a8d718a1df2",
+            "width": 1424,
+            "height": 921,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "03-draft-conflict.png",
+            "sha256": "46bf55d2a4d58a42f445f85ada4fd3d4d84b2e891660b606a6f7b623c82a0197",
+            "width": 1424,
+            "height": 921,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "04-saved.png",
+            "sha256": "d5b7973052e952609ec066c9b40d64012705dc9b7d9981e1fa1c1f2b658c2352",
+            "width": 1424,
+            "height": 921,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          },
+          {
+            "file": "05-restored.png",
+            "sha256": "b473eaae54b1d415ec78e1d5be449aba7a997005b241530dcf49d65ef3bd2b6d",
+            "width": 1424,
+            "height": 921,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          }
+        ],
+        "build": {
+          "productionSidecar": "99cd5948d1f99d5bb117a7e9cf1d752f618adb69226fdf63d6faf8fc5c79a8da",
+          "frontendAssets": {
+            "assets\\app-icon-DLmOI6-2.svg": "9747806befaa0c353aa268855feaf30ef167c8ab48fe5ad326ed97b602499b41",
+            "assets\\index-C9NY5CT0.js": "063785f34c3dbbcdf8193f73f5cded54b865ad31860ddad1aa5949b3dd045e7b",
+            "assets\\index-CYy3Vioq.css": "01b029b7865d98c374ea32fddfa37e9e388350082e76d7b9f24a87add5fa270e",
+            "index.html": "ad46c919b53288517462774e559f5457413b6df63acb8b01f1671677774afff3"
+          },
+          "testApp": "1f327398043415a36f582e5ed43b7ac9ac2a62c583d15df4468607f73ac7384d",
+          "testSidecar": "6ff0264d003d38061e0f14deaaa035e14b060e188e7dabc2cc89e20920cbdebd",
+          "testIdentifier": "com.supertravel.desktop.nativegui.rund32fac402e344cbf81d151297080aab0"
+        },
+        "capabilities": {
+          "acceptInsecureCerts": false,
+          "browserName": "webview",
+          "browserVersion": "unknown",
+          "pageLoadStrategy": "normal",
+          "platformName": "windows",
+          "setWindowRect": true,
+          "timeouts": {
+            "implicit": 0,
+            "pageLoad": 300000,
+            "script": 30000
+          }
+        },
+        "url": "http://tauri.localhost/",
+        "fixtureCalls": {
+          "fixture": true,
+          "mode": "ok",
+          "modelCalls": 11,
+          "searchCalls": 2,
+          "routeCalls": 2
+        },
+        "artifact_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/artifacts/12864376161",
+        "report_and_all_screenshot_bytes_verified": true
+      },
+      "native_update": {
+        "platform": "windows-x86_64-nsis",
+        "from": "0.1.2",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API and NSIS",
+        "old_client_gui_tested": false,
+        "old_installed_executable_version": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install_exact_candidate_binaries": "passed",
+        "installed_sidecar_startup_and_persistence": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed",
+        "desktop_gui_startup_and_restart": "requires separate manual GUI validation"
+      }
+    },
+    {
+      "target": "x86_64-apple-darwin",
+      "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/job/123192781576",
+      "job_attempt": 1,
+      "build": "passed",
+      "python_backend_and_fixture_tests_passed": 285,
+      "release_integrity_checks_passed": 23,
+      "rust_unit_tests": "passed",
+      "rust_unit_tests_passed": 7,
+      "os_credentials_write_read_replace_delete": "passed",
+      "native_business_gui": {
+        "schema": 1,
+        "target": "x86_64-apple-darwin",
+        "platform": "Darwin",
+        "status": "passed",
+        "driver": "tauri-plugin-wdio-webdriver 1.5.0 / W3C",
+        "webview": "WKWebView",
+        "fixtures": "Local HTTPS OpenAI-format model and HTTP shared tools; not live provider acceptance",
+        "buildScope": "Production Rust builder, frontend dist, Python modules; test-only driver and fixture CA; not the byte-identical published installer",
+        "checks": [
+          "native_settings_model_keyring_and_shared_tools",
+          "create_empty_conversation_via_ui",
+          "planner_chat_and_clarification_before_generation",
+          "planner_executor_generate_two_days_map_markers_and_selection",
+          "chat_draft_does_not_overwrite_formal_costs_and_conflict_blocks_apply",
+          "resolve_changed_place_apply_save_json_no_model_key",
+          "full_native_process_restart_restores_conversation_trip_map_and_costs",
+          "production_release_assets_unchanged"
+        ],
+        "screenshots": [
+          {
+            "file": "01-empty.png",
+            "sha256": "66ae621fe87a6863bec20e9fdbd1ec25e9b38130c2813af2783e4ef4943da208",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 0
+          },
+          {
+            "file": "02-generated.png",
+            "sha256": "dfcdfd08869112efbd77d0c3c438da60e226d99ac68e391181155ffd8ccc7fa4",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "03-draft-conflict.png",
+            "sha256": "9600d557efc3690c8aa835f1001c0394f6611f1cbca822250c2988177666d148",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 35
+          },
+          {
+            "file": "04-saved.png",
+            "sha256": "bc9edcd4c0fc75e930f7f54b9ee6a367ae9aa5260ee5244da0b88f4d67461058",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          },
+          {
+            "file": "05-restored.png",
+            "sha256": "03d44ee9ab13050c17347679ea1cab8f03b667d9154835d33fe79d5d1a75f3cd",
+            "width": 1440,
+            "height": 960,
+            "workspaceVisible": true,
+            "mapTilesLoaded": 28
+          }
+        ],
+        "build": {
+          "productionSidecar": "4b5dd0684362db76d71332fdd552dfbbbcdd305a06d27271608759e18d3dc28b",
+          "frontendAssets": {
+            "assets/app-icon-CIovqxe6.svg": "ee53e6987c0352500d1c2d11b8bc9ca8d40494f1f2d08481b13bfbd39f27e9e2",
+            "assets/index-CYy3Vioq.css": "01b029b7865d98c374ea32fddfa37e9e388350082e76d7b9f24a87add5fa270e",
+            "assets/index-CsJTtO_J.js": "23a084313f6dbccafc9aa27238e6028583ce64a86f64200827d35de7d620698d",
+            "index.html": "4db18531896f1a45c3e03cf1d0fc086f1c3fc1b54cb7e1935ca1722ff77420e6"
+          },
+          "testApp": "16f74122cec4d940d3d70c0c7c48f3932b89371d89983088e628adec465f1a4a",
+          "testSidecar": "f8eedd5d62fbfdce0b3d69692029c5e90800424776fc4035fc08e872794168a9",
+          "testIdentifier": "com.supertravel.desktop.nativegui.runf1fd6ce8ede64dd78fd6d1a04a21678e"
+        },
+        "capabilities": {
+          "acceptInsecureCerts": false,
+          "browserName": "webview",
+          "browserVersion": "unknown",
+          "pageLoadStrategy": "normal",
+          "platformName": "macos",
+          "setWindowRect": true,
+          "timeouts": {
+            "implicit": 0,
+            "pageLoad": 300000,
+            "script": 30000
+          }
+        },
+        "url": "tauri://localhost",
+        "fixtureCalls": {
+          "fixture": true,
+          "mode": "ok",
+          "modelCalls": 11,
+          "searchCalls": 2,
+          "routeCalls": 2
+        },
+        "artifact_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/artifacts/12865040800",
+        "report_and_all_screenshot_bytes_verified": true
+      },
+      "native_update": {
+        "platform": "darwin-x86_64-app",
+        "from": "0.1.2",
+        "to": "0.1.3",
+        "driver": "CI-only native Tauri updater API",
+        "old_client_gui_tested": false,
+        "old_native_startup": "passed",
+        "corrupt_download_rejected_old_install_preserved": "passed",
+        "interrupted_download_rejected_old_install_preserved": "passed",
+        "signed_native_install": "passed",
+        "new_native_startup_and_exit": "passed",
+        "conversation_trip_draft_and_config_bytes_preserved": "passed"
+      },
+      "native_startup_and_cleanup": "passed"
+    }
+  ],
+  "prior_failed_jobs": [],
+  "superseded_unpublished_tag_workflow": {
+    "workflow_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40723397520",
+    "commit": "03cad629c68860514883778d1c8d22e24724fe49",
+    "conclusion": "failure",
+    "failure_records_retained": true,
+    "failed_jobs": [
+      {
+        "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40723397520/job/122940090669",
+        "attempt": 1,
+        "failed_steps": [
+          "Verify native WebView business workflow"
+        ],
+        "business_checks_completed": 0,
+        "screenshots_captured": 0,
+        "error": "{\"value\":{\"error\":\"no such window\",\"message\":\"No window could be found\",\"stacktrace\":\"\"}}",
+        "artifact_id": 12832800822,
+        "local_backup_zip_sha256": "fbed3234ec2c2b37d78d99ed4b5ebdbfa45d97db7c270b06d76144258291b0bc",
+        "artifact_removed_after_verified_backup": true
+      },
+      {
+        "job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40723397520/job/123186465205",
+        "attempt": 2,
+        "failed_steps": [
+          "Verify native WebView business workflow"
+        ],
+        "business_checks_completed": 0,
+        "screenshots_captured": 0,
+        "error": "{\"value\":{\"error\":\"no such window\",\"message\":\"No window could be found\",\"stacktrace\":\"\"}}",
+        "artifact_id": 12862659287,
+        "local_backup_zip_sha256": "33be9166af8562fef691671b9171bbeaf018c8267cdba06f5c3d57d532bf26d7",
+        "artifact_removed_after_verified_backup": false
+      }
+    ],
+    "diagnosis": "The test harness treated a nonempty /status response as ready even when ready=false. The plugin then waited only 10 seconds for a window and returned no such window. The harness now checks ready=true and process liveness before session creation.",
+    "unpublished_tag_revision": {
+      "tag": "v0.1.3",
+      "oldCommit": "03cad629c68860514883778d1c8d22e24724fe49",
+      "newCommit": "a0eb3ee5a34cc62ee9751470cae2b95148296f9c",
+      "releaseAbsentCheckedAt": "2026-10-29T00:45:00.236395+00:00",
+      "releaseExistedBeforeMove": false,
+      "changedFiles": [
+        "scripts/native-gui.py",
+        "tests/native/README.md",
+        "tests/native/test_driver_readiness.py"
+      ],
+      "reason": "The unreleased candidate test treated WebDriver ready:false as ready; only test readiness and its regression/docs changed. Both failed runs remain preserved.",
+      "pushArguments": [
+        "git",
+        "push",
+        "--atomic",
+        "origin",
+        "HEAD:refs/heads/main",
+        "HEAD:refs/tags/v0.1.3",
+        "--force-with-lease=refs/tags/v0.1.3:03cad629c68860514883778d1c8d22e24724fe49"
+      ],
+      "movedAndVerifiedAt": "2026-10-29T00:45:04.503403+00:00",
+      "exactOldTagLeaseVerified": true
+    },
+    "earlier_linux_capture_limitation": {
+      "status": "passed",
+      "checkedAt": "2026-10-28T16:24:53.808651+00:00",
+      "reviewer": "Parent Codex agent using view_image",
+      "images": {
+        "03-draft-conflict.png": "b0c2c259a313aa552c11a64ccb90b73e742e3ffc02f9169272286998367d60c5",
+        "04-saved.png": "0bc9c905573166e1c9e20a63b29be0d5463a0db8a519d6a1a0f915b2c0444f00",
+        "05-restored.png": "fe9a1b90da6556cd22cd25aa7034ec2963766ac2c28d4fb144205214f1a1d983"
+      },
+      "observations": "03/04/05 show complete actual map tiles. 05 has no startup overlay and restores garden/museum markers, 11:30, CNY 12.50 and saved description.",
+      "screenshotLimitation": "02-generated.png shows a solid background although DOM tile loading completed; the capture preceded WebKit composite paint. It is not accepted as visual evidence of the rendered map. Linux map and persistence acceptance relies on 03-draft-conflict.png, 04-saved.png and 05-restored.png.",
+      "notAcceptedAsMapEvidence": [
+        "02-generated.png"
+      ]
+    }
+  },
+  "release_job_url": "https://github.com/IT-coder-Yy/SuperTravelAgent/actions/runs/40796084590/job/123199430477",
+  "visual_review": {
+    "runId": "40796084590",
+    "commit": "a0eb3ee5a34cc62ee9751470cae2b95148296f9c",
+    "method": "Codex image inspection using view_image; not a manual user test",
+    "targets": {
+      "x86_64-unknown-linux-gnu": {
+        "status": "passed",
+        "checkedAt": "2026-10-29T00:54:00.973580+00:00",
+        "reviewer": "Parent Codex agent using view_image",
+        "images": {
+          "02-generated.png": "c01b4d7a383e5ed06c16efdcafd58e92f09e1b466aa940c81ea047e2a884ee67",
+          "05-restored.png": "965da7718c246a0cbf988a2d1c2062c414816dab27e1c63e2e8d93c7340e41c6"
+        },
+        "observations": "Chinese UI and complete map tiles are readable in both generated and restored screenshots; no startup/loading overlay. Restored view shows garden/museum markers, 11:30, CNY 12.50, edited description and local saved indicator. The prior run's blank-background capture is not present in these final screenshots."
+      },
+      "aarch64-apple-darwin": {
+        "status": "passed",
+        "checkedAt": "2026-10-29T00:55:05.284241+00:00",
+        "reviewer": "Codex release validation agent using view_image",
+        "images": {
+          "02-generated.png": "81801aaa6c6dfa564d93d72bb47bedd5113d47f7ae823039c818f29900a78498",
+          "05-restored.png": "b8985c1b59cbdb087160f51b22d66b87ba781d6dbdad0d82199d40cea3813dd1"
+        },
+        "observations": "Chinese UI and complete map tiles render with no startup/loading overlay. Restored view shows the garden, saved description, 11:30 activity, CNY 12.50 total and local saved indicator. The activity list remains scrollable in the captured 684-pixel-high viewport; lower details are outside its visible area."
+      },
+      "x86_64-pc-windows-msvc": {
+        "status": "passed",
+        "checkedAt": "2026-10-29T00:56:45.973725+00:00",
+        "reviewer": "Codex release validation agent using view_image",
+        "images": {
+          "02-generated.png": "f535f09b38173f57a8f623d9263a5cf57a95746fb99cd23c11359a8d718a1df2",
+          "05-restored.png": "b473eaae54b1d415ec78e1d5be449aba7a997005b241530dcf49d65ef3bd2b6d"
+        },
+        "observations": "Chinese UI and complete map tiles render with no startup/loading overlay. Restored view visibly includes garden and museum map markers, 11:30 activity, CNY 12.50 item and total, saved description and local saved indicator."
+      },
+      "x86_64-apple-darwin": {
+        "status": "passed",
+        "checkedAt": "2026-10-29T01:06:16.135203+00:00",
+        "reviewer": "Codex release validation agent using view_image",
+        "images": {
+          "02-generated.png": "dfcdfd08869112efbd77d0c3c438da60e226d99ac68e391181155ffd8ccc7fa4",
+          "05-restored.png": "03d44ee9ab13050c17347679ea1cab8f03b667d9154835d33fe79d5d1a75f3cd"
+        },
+        "observations": "Chinese UI and complete map tiles render with no startup/loading overlay. Restored view visibly includes garden and museum map markers, 11:30 activity, CNY 12.50 item and total, saved description and local saved indicator."
+      }
+    }
+  },
+  "published_asset_ci_linkage": {
+    "same_tag_workflow_artifact_gate": true,
+    "production_packages_unchanged_during_gui_test_asserted": true,
+    "native_updater_checks_candidate_against_platform_manifest": true,
+    "release_merge_checks_each_platform_manifest_digest": true,
+    "public_downloads_directly_matched_to_gui_report_package_hashes": false,
+    "limitation": "Native GUI and updater reports do not export full production package SHA256 values; published downloads are checked against GitHub asset digests and SHA256SUMS, with test-to-release package continuity enforced by the same workflow artifact and merge gates.",
+    "tag_source_paths": [
+      "scripts/native-gui.py",
+      "scripts/smoke-native-update.py",
+      "scripts/smoke-windows-update.py",
+      "scripts/prepare-release.py",
+      ".github/workflows/desktop.yml"
+    ]
+  },
+  "amap_live_evidence": {
+    "source": "https://github.com/IT-coder-Yy/SuperTravelAgent/blob/a0eb3ee5a34cc62ee9751470cae2b95148296f9c/docs/amap-route-validation.json",
+    "source_sha256": "fa174b3b6e812a2271c8da54f80caa11c8674f936fdc08fbf4d401c21c0597e2",
+    "conclusion": {
+      "liveAmapWalkingRoute": true,
+      "livePoiToRoute": false,
+      "blocker": "Amap POI search reports tool_quota through both MCP and REST; no retries after either quota response.",
+      "actionRequired": "Restore developer POI search quota or configure an authorized Amap Web Service key with POI quota, then repeat the two-POI-to-route acceptance."
+    },
+    "production_route_probe": {
+      "checkedAt": "2026-10-28T15:05:08.692891+00:00",
+      "completed": true,
+      "scope": "Production SharedTools -> local relay -> Amap REST -> TripResearch.route/submit -> JSON round trip",
+      "inputSource": "Official walking example GCJ-02 coordinates, with explicit acceptance-only IDs; NOT successful POI search results.",
+      "documentation": "https://developer.amap.com/api/webservice/guide/api/direction",
+      "actualRouteCalls": 1,
+      "modelCalls": 0,
+      "route": {
+        "fromPlaceId": "amap:acceptance-origin",
+        "toPlaceId": "amap:acceptance-destination",
+        "mode": "walking",
+        "status": "verified",
+        "reason": "查询时的路线估算，不是出行当天的交通保证。",
+        "queriedAt": "2026-10-28T15:05:11.282577+00:00",
+        "provider": "amap",
+        "durationMinutes": 3,
+        "distanceMeters": 209
+      },
+      "rawResponseSummary": {
+        "status": "1",
+        "info": "ok",
+        "infocode": "10000",
+        "arguments": {
+          "origin": "116.434307,39.909090",
+          "destination": "116.434446,39.908160"
+        },
+        "metrics": {
+          "duration": "167",
+          "distance": "209"
+        }
+      },
+      "binding": {
+        "jsonRoundTrip": true,
+        "incomingRouteMatches": true
+      }
+    }
+  },
+  "release": {
+    "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.3",
+    "published_at": "2026-10-29T01:04:42Z",
+    "is_latest": true,
+    "assets_count": 12,
+    "all_asset_bytes_downloaded_and_sha256_verified": true,
+    "manifest_and_release_notes_match_tag_source": true,
+    "four_platform_urls_and_version_bound_signatures_match_assets": true,
+    "assets": [
+      {
+        "name": "SHA256SUMS.txt",
+        "bytes": 1129,
+        "sha256": "787caef292af205b95a2a947cbaccc6c002080421f45bf85769b187c7e827702",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SHA256SUMS.txt"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz",
+        "bytes": 25644003,
+        "sha256": "509b97212f74643e2919159f4d5483ee3528fb802452ff38a7085ea96fd86818",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz.sig",
+        "bytes": 429,
+        "sha256": "8284b2c17e34ced7fdc1b9a227aa209cc3af87328e5663ef3857f3604a3a4792",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-aarch64-app.app.tar.gz.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-aarch64-app.dmg",
+        "bytes": 25581218,
+        "sha256": "9bc85a2068d0c1d1b0599be975ca3746a8415447c8500f66f10deed651551af2",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-aarch64-app.dmg"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz",
+        "bytes": 26841889,
+        "sha256": "89c82f10e7d0a7d498829b2e0393e5cb1ceac662ca8c6c0df84503af0bd9705d",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz.sig",
+        "bytes": 429,
+        "sha256": "4e4daa9a87ac3ec15aaedc01b4f88e79803987f9c0c024b56ce8b8408cb12f43",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-x86_64-app.app.tar.gz.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.3_darwin-x86_64-app.dmg",
+        "bytes": 26820476,
+        "sha256": "c3f0561d5d063c1d205b40f6bf5419ad0fef2acf163b3158b42201ff66db65ff",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_darwin-x86_64-app.dmg"
+      },
+      {
+        "name": "SuperTravel_0.1.3_linux-x86_64-appimage.AppImage",
+        "bytes": 122796536,
+        "sha256": "8caf8246542f75a39722267046cf0218e0af10b2b012c143b1bde80794c2dd97",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_linux-x86_64-appimage.AppImage"
+      },
+      {
+        "name": "SuperTravel_0.1.3_linux-x86_64-appimage.AppImage.sig",
+        "bytes": 445,
+        "sha256": "6ff710cdef646a5a36b748b9e02cb8fa9472da7189ac1466daf00e95471a33b4",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_linux-x86_64-appimage.AppImage.sig"
+      },
+      {
+        "name": "SuperTravel_0.1.3_windows-x86_64-nsis.exe",
+        "bytes": 25663008,
+        "sha256": "b1ee9b72e49decc61a8cdc0c3d857e14931457a5aa6813e51c04cc61244a4de3",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_windows-x86_64-nsis.exe"
+      },
+      {
+        "name": "SuperTravel_0.1.3_windows-x86_64-nsis.exe.sig",
+        "bytes": 442,
+        "sha256": "d0212444ef1a6b7fb9277d46248b6efafdb8b9a5b97abe2c375b8916b3eae759",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/SuperTravel_0.1.3_windows-x86_64-nsis.exe.sig"
+      },
+      {
+        "name": "latest.json",
+        "bytes": 5037,
+        "sha256": "e1e5b25af1d69921afc10e7d8b794b757bc6b0f762436fe69defbfa8f3ed9a3f",
+        "url": "https://github.com/IT-coder-Yy/SuperTravelAgent/releases/download/v0.1.3/latest.json"
+      }
+    ]
+  }
+}
