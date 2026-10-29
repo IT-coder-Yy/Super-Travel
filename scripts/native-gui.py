@@ -104,6 +104,7 @@ class WebView:
         self.binary, self.output = binary, output
         self.process = None
         self.session = ""
+        self.driver_status = None
         self.log = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -124,6 +125,7 @@ class WebView:
         return self.request(f"/session/{self.session}" + path, body, method)
 
     def start(self):
+        self.driver_status = None
         with socket.socket() as port:
             port.bind(("127.0.0.1", 0))
             number = port.getsockname()[1]
@@ -131,7 +133,11 @@ class WebView:
         self.log = (self.output / "native-app.log").open("a", encoding="utf-8")
         env = {**os.environ, "TAURI_WEBDRIVER_PORT": str(number)}
         self.process = subprocess.Popen([str(self.binary)], cwd=self.binary.parent, env=env, stdout=self.log, stderr=self.log)
-        wait(lambda: self.request("/status"), "native embedded driver starts", 60)
+        def driver_ready():
+            self.driver_status = self.request("/status")
+            return self.driver_status.get("ready") is True
+        # The HTTP server responds before its native WebView has initialized.
+        wait(driver_ready, "native WebView reports ready=true", 60)
         result = self.request("/session", {"capabilities": {"alwaysMatch": {"wdio:tauriServiceOptions": {"windowLabel": "main"}}}})
         self.session = result["sessionId"]
         self.capabilities = result["capabilities"]
@@ -395,6 +401,9 @@ def main():
         report["status"] = "passed"
     except Exception as error:
         report["error"] = str(error)
+        if view:
+            report["lastDriverStatus"] = view.driver_status
+            report["nativeProcessExitCode"] = view.process.poll() if view.process else None
         if view and view.session:
             try:
                 report["screenshots"].append(view.screenshot("failure.png"))
