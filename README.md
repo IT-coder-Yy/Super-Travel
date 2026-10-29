@@ -1,6 +1,6 @@
-# SuperTravelAgent
+# Super-Travel
 
-本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 [0.1.3 本机开发版](https://github.com/IT-coder-Yy/SuperTravelAgent/releases/tag/v0.1.3)，包含双层 ReAct、路线耗时检查与活动费用；三平台业务界面、升级和发布核验见 [M5](docs/M5.md)。此前记录见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md)、[真实行程闭环](docs/M3.md) 与 [0.1.2 发布验证](docs/M4.md)。
+本地优先的旅行规划桌面客户端：**Tauri 2 + React + Python、本地 JSON 会话、双 Agent、三平台打包与签名更新**。已发布 [0.1.3 本机开发版](https://github.com/IT-coder-Yy/Super-Travel/releases/tag/v0.1.3)，包含双层 ReAct、路线耗时检查与活动费用；三平台业务界面、升级和发布核验见 [M5](docs/M5.md)。此前记录见 [M1](docs/VALIDATION.md)、[M2](docs/M2.md)、[真实行程闭环](docs/M3.md) 与 [0.1.2 发布验证](docs/M4.md)。
 
 界面按 [原项目 README 的 C1 Glacier White Preview](https://github.com/IT-coder-Yy/SuperTravel-Agent#preview) 重新实现。主分支支持真实地点行程生成、地图展示、草稿修改和本地保存；新会话从空白开始，旧示例会话仍明确标注。
 
@@ -72,7 +72,9 @@ npm run desktop:build
 
 ## 更新与发布
 
-公开仓库：<https://github.com/IT-coder-Yy/SuperTravelAgent>。
+公开仓库：<https://github.com/IT-coder-Yy/Super-Travel>。
+
+2026-10-29 已完成仓库改名，旧版更新兼容与地址核验见 [改名记录](docs/REPOSITORY_RENAME.md)。
 
 - GitHub Actions 构建 Windows x64、macOS arm64/x64、Linux x64。
 - 正式发布必须配置 `TAURI_SIGNING_PRIVATE_KEY` Secret，以及 `STA_UPDATER_PUBLIC_KEY`、`STA_UPDATE_ENDPOINT` 变量。`STA_SHARED_TOOLS_URL` 可选，默认 `http://127.0.0.1:8080`；本机模式的 tag 构建不要求 CI 运行工具服务。若显式配置 HTTPS 服务，发布前仍检查工具目录与凭据配置状态。仅允许 HTTPS 或回环 HTTP 地址，不允许 URL 凭据、查询参数和片段；四项工具凭据始终只放在服务运行环境中。

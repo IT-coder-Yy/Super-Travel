@@ -204,7 +204,7 @@ def main():
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--driver", type=Path, required=True)
     parser.add_argument("--old-version", default="0.1.0")
-    parser.add_argument("--repository", default="IT-coder-Yy/SuperTravelAgent")
+    parser.add_argument("--repository", default="IT-coder-Yy/Super-Travel")
     args = parser.parse_args()
     args.artifact_dir, args.driver = args.artifact_dir.resolve(), args.driver.resolve()
     report = exercise(args)
