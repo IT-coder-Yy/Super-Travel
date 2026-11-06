@@ -92,7 +92,8 @@ def test_real_agent_search_route_submit_and_preserve_times(live_fixture):
             modified = session.snapshot()
             assert modified["status"] == "completed", modified["error"]
             assert modified["trip_result"]["days"][0]["activities"][0]["time"] == "08:30"
-            assert "调整" in modified["trip_result"]["days"][0]["activities"][0]["description"]
+            for before, after in zip(trip["days"], modified["trip_result"]["days"], strict=True):
+                assert [(a["id"], a["description"]) for a in after["activities"]] == [(a["id"], a["description"]) for a in before["activities"]]
         finally:
             await session.aclose()
 

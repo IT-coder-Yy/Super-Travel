@@ -1,6 +1,7 @@
 node_modules/
 dist/
 src-tauri/target/
+src-tauri/gen/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 backend/.venv/
@@ -17,3 +18,13 @@ test-results/
 playwright-report/
 artifacts/
 tools-service/
+
+# Generated PDF resources and local development records.
+/backend/assets/
+/DESIGN.md
+/PRODUCT.md
+/scripts/UPDATE-REHEARSAL.md
+/docs/*
+!/docs/README.md
+!/docs/RELEASE_NOTES.md
+!/docs/preview.png

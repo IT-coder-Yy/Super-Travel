@@ -1,4 +1,5 @@
 mod backend;
+mod exports;
 mod model_settings;
 mod updates;
 
@@ -48,6 +49,8 @@ pub fn run() {
             backend_connection,
             app_version,
             set_data_directory,
+            exports::save_markdown,
+            exports::save_pdf,
             model_settings::get_model_settings,
             model_settings::save_model_settings,
             model_settings::delete_model_key,

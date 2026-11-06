@@ -12,6 +12,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agents import AgentSession
+from backend.preferences import PreferencesStore
 from backend.mcp_client import McpClient, ToolError
 from backend.external_tools import ExternalTools
 from backend.shared_tools import SharedTools
@@ -43,6 +44,7 @@ class SendMessage(BaseModel):
 class AgentService:
     def __init__(self, store, error_type):
         self.store, self.error_type = store, error_type
+        self.preferences = PreferencesStore(store, error_type)
         self.model: ModelClient | None = None
         self.base_url = self._base_url(os.environ.get("STA_MODEL_BASE_URL") or "https://dashscope.aliyuncs.com/compatible-mode/v1")
         self.model_name = os.environ.get("STA_MODEL_NAME", "")
@@ -226,12 +228,30 @@ class AgentService:
                     previous = data.get("agent") or {}
                     result = state.get("trip_result")
                     if state.get("status") == "completed" and result and not (previous.get("run_id") == state.get("run_id") and previous.get("status") == "completed"):
+                        from backend.candidates import active_candidates, validate_candidate_snapshot
                         from backend.trips import validate_result
                         result = validate_result(result)
+                        pool = active_candidates(data)
+                        selected = state.get("submitted_candidate_ids", [])
+                        if (not isinstance(selected, list) or any(not isinstance(item, str) for item in selected)
+                                or len(set(selected)) != len(selected)):
+                            raise ValueError("候选引用无效，请重新生成草稿。")
+                        if ("candidate_snapshot" in state and state["candidate_snapshot"] != pool) or (selected and "candidate_snapshot" not in state):
+                            raise ValueError("候选池已改变，请重新生成草稿。")
+                        source = {item["id"]: item for item in pool}
+                        activities = {item["id"]: item for day in result["days"] for item in day["activities"]}
+                        for candidate_id in selected:
+                            candidate, activity = source.get(candidate_id), activities.get(candidate_id)
+                            if (not candidate or not activity or activity["place"] != candidate["place"]
+                                    or activity.get("cost") != candidate.get("cost")
+                                    or candidate["destination"].removesuffix("市") != result["trip"]["destination"].removesuffix("市")):
+                                raise ValueError("候选引用与原资料不一致，请重新生成草稿。")
+                        remaining = [item for item in pool if item["id"] not in selected]
+                        validate_candidate_snapshot(result["days"], remaining)
                         if data.get("trip"):
-                            data.update(draft=result["days"], draftTrip=result["trip"])
+                            data.update(draft=result["days"], draftTrip=result["trip"], draftCandidates=remaining)
                         else:
-                            data.update(days=result["days"], trip=result["trip"], draft=None, draftTrip=None, selectedDay=1)
+                            data.update(days=result["days"], trip=result["trip"], candidates=remaining, draft=None, draftTrip=None, draftCandidates=None, selectedDay=1)
                     data["agent"] = state
                     if state.get("status") in ("completed", "needs_input") and state.get("content"):
                         self._append(data, f"run-{state['run_id']}-{state['status']}", "assistant", state["content"])
@@ -260,15 +280,18 @@ class AgentService:
                 raise self.error_type(409, "model_unconfigured", "请先在设置中配置模型连接。")
             if identifier in self.turns:
                 raise self.error_type(409, "message_pending", "规划 Agent 正在处理上一条消息，请稍候。")
+            travel_preferences, preference_error = self.preferences.snapshot()
             history = [{"role": item["role"], "content": item["content"]} for item in document.data.get("messages", [])
                        if item.get("role") in ("user", "assistant") and isinstance(item.get("content"), str)][-40:]
             def append(data):
                 self._append(data, str(payload.message_id), "user", payload.content)
                 data["agentPending"] = True
+                if preference_error:
+                    self._append(data, "preferences-" + str(payload.message_id), "assistant", preference_error)
             self.store.mutate(identifier, append)
             self.failed_turns.pop(identifier, None)
             session = self.session(identifier)
-            self.turns[identifier] = asyncio.create_task(self._turn(identifier, payload, session, history))
+            self.turns[identifier] = asyncio.create_task(self._turn(identifier, payload, session, history, travel_preferences))
             return self.store.get(identifier)
 
     def _write_turn(self, identifier, message_id, change):
@@ -277,19 +300,24 @@ class AgentService:
         except Exception:
             self.failed_turns[identifier] = str(message_id)
 
-    async def _turn(self, identifier, payload, session, history):
+    async def _turn(self, identifier, payload, session, history, travel_preferences):
         try:
             data = self.store.get(identifier).data
             meta = data.get("draftTrip") or data.get("trip")
-            trip_context = {"days": data.get("draft") or data.get("days"), "trip": meta} if meta else None
-            reply = await session.chat(payload.content, history=history, trip_context=trip_context)
+            trip_context = {"days": data["draft"] if data.get("draft") is not None else data.get("days"), "trip": meta} if meta else None
+            if trip_context:
+                from backend.candidates import active_candidates
+                pool = active_candidates(data)
+                if pool:
+                    trip_context["candidates"] = pool
+            reply = await session.chat(payload.content, history=history, trip_context=trip_context, travel_preferences=travel_preferences)
             if self.turns.get(identifier) is asyncio.current_task() and reply.get("content"):
                 self._write_turn(identifier, payload.message_id, lambda data: self._append(data, "reply-" + str(payload.message_id), "assistant", reply["content"]))
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             if self.turns.get(identifier) is asyncio.current_task():
-                content = "本次对话未完成，请检查模型设置后重试。已保存的消息保持不变。"
+                content = str(error) if isinstance(error, ModelError) and error.code in ("agent_preferences", "agent_plan") else "本次对话未完成，请检查模型设置后重试。已保存的消息保持不变。"
                 self._write_turn(identifier, payload.message_id, lambda data: self._append(data, "reply-" + str(payload.message_id), "assistant", content))
         finally:
             if self.turns.get(identifier) is asyncio.current_task():

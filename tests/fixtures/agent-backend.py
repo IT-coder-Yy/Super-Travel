@@ -11,6 +11,7 @@ for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_M
 
 from backend import agent_service, main
 from backend.model import ModelReply
+from backend.mcp_client import ToolError
 
 
 def reply(content=None, name=None, arguments=None):
@@ -26,7 +27,8 @@ class FixtureModel:
 
     async def chat(self, messages, tools=None, **_kwargs):
         if tools and tools[0]["function"]["name"] == "route_request":
-            text = json.loads(messages[-1]["content"])["request"]
+            context = json.loads(messages[-1]["content"])
+            text = context["request"]
             if "固定行程" in text:
                 return reply(name="route_request", arguments={"kind": "plan", "content": "固定测试：查询地点并生成行程。", "steps": ["查询固定地点并提交两天行程"], "trip": {"destination": "杭州", "days": 2}})
             kind, content, steps = "plan", "固定测试计划已开始。", ["查询杭州天气（固定测试工具）"]
@@ -36,16 +38,45 @@ class FixtureModel:
                 kind, content, steps = "progress", "查看已有任务进度。", []
             elif "缺少" in text:
                 kind, content, steps = "clarification", "你准备查询哪个城市？", []
-            return reply(name="route_request", arguments={"kind": kind, "content": content, "steps": steps, "replace_active": False})
+            preferences = context.get("travel_preferences")
+            summary = {}
+            if kind == "plan" and preferences and "偏好验收" in text:
+                application = {"global_opt_out": None, **{key: {"status": "default" if value is not None and value != "" else "unset",
+                    "value": value if value is not None and value != "" else None, "evidence": None} for key, value in preferences.items()}}
+                summary = {"preference_application": application}
+            return reply(name="route_request", arguments={"kind": kind, "content": content, "steps": steps, "replace_active": False, **summary})
         if tools:
             if any(tool["function"]["name"] == "submit_trip" for tool in tools):
                 context = json.loads(messages[1]["content"])
                 if not context.get("available_places") and messages[-1]["role"] != "tool":
                     return reply(name="search_trip_places", arguments={"query": "固定测试公园"})
+                if "把候选排入" in context["request"] and context.get("current_candidates"):
+                    days = [{"day": day["day"], "title": day["title"], "subtitle": day["subtitle"],
+                             "activities": [{"activity_id": activity["id"], "place_id": activity["place"]["id"],
+                                             "time": activity["time"], "duration_minutes": int(activity["duration"].split()[1]),
+                                             "description": "固定模型重述，不应覆盖已有备注"} for activity in day["activities"]]}
+                            for day in context["current_trip"]["days"]]
+                    candidate = context["current_candidates"][0]
+                    days[0]["activities"].append({"activity_id": candidate["id"], "place_id": candidate["place"]["id"],
+                                                 "time": "15:00", "duration_minutes": 15,
+                                                 "description": "固定模型重述，不应覆盖候选备注或默认时长"})
+                    return reply(name="submit_trip", arguments={"summary": "固定测试：用户明确要求候选排入", "days": days})
+                if "保持身份" in context["request"] and context.get("current_trip"):
+                    days = []
+                    for day in context["current_trip"]["days"]:
+                        activities = [{"activity_id": activity["id"], "place_id": activity["place"]["id"],
+                                       "time": activity["time"], "duration_minutes": int(activity["duration"].split()[1]),
+                                       "description": "固定模型重述，不应覆盖已保存备注"} for activity in day["activities"]]
+                        if activities:
+                            last = activities[-1]
+                            minutes = int(last["time"][:2]) * 60 + int(last["time"][3:]) + 15
+                            last["time"] = f"{minutes // 60:02d}:{minutes % 60:02d}"
+                        days.append({"day": day["day"], "title": day["title"], "subtitle": day["subtitle"], "activities": activities})
+                    return reply(name="submit_trip", arguments={"summary": "固定测试：保持身份并延后末项15分钟", "days": days})
                 description = "固定测试调整：改为慢游。" if "调整" in context["request"] else "固定测试安排，并非实时旅行建议。"
                 return reply(name="submit_trip", arguments={"summary": "固定离线测试行程", "days": [
                     {"day": day, "title": f"固定测试第{day}天", "subtitle": "固定资料", "activities": [
-                        {"place_id": "baidu:fixture-park", "time": "09:00", "duration_minutes": 60, "description": description},
+                        {"place_id": "baidu:fixture-park", "time": "09:00", "duration_minutes": 75 if "调整" in context["request"] else 60, "description": description},
                         {"place_id": "baidu:fixture-museum", "time": "11:00", "duration_minutes": 60, "description": "固定测试参观"}
                     ]} for day in (1, 2)
                 ]})
@@ -75,6 +106,15 @@ class FixtureTools:
 
     async def call_tool(self, _name, _arguments):
         if _name == "baidu_map_search_places":
+            query = _arguments.get("query", "")
+            if "测试额度不足" in query:
+                raise ToolError("tool_quota", False, "固定测试：地点服务额度不足，请稍后重试。")
+            if "没有可核验地点" in query or "同名茶馆" in query:
+                places = [] if "没有可核验地点" in query else [
+                    {"uid": "fixture-tea-east", "name": "固定测试同名茶馆", "address": "固定测试东岸地址", "city": "杭州市", "location": {"lat": 30.26, "lng": 120.18}},
+                    {"uid": "fixture-tea-west", "name": "固定测试同名茶馆", "address": "固定测试西岸地址", "city": "杭州市", "location": {"lat": 30.25, "lng": 120.19}},
+                ]
+                return {"isError": False, "content": [{"type": "text", "text": json.dumps({"status": 0, "results": places}, ensure_ascii=False)}]}
             return {"isError": False, "content": [{"type": "text", "text": json.dumps({"status": 0, "results": [
                 {"uid": "fixture-park", "name": "固定测试公园", "address": "固定测试公园地址", "city": "杭州市", "location": {"lat": 30.25, "lng": 120.15}},
                 {"uid": "fixture-museum", "name": "固定测试博物馆", "address": "固定测试博物馆地址", "city": "杭州市", "location": {"lat": 30.27, "lng": 120.16}},

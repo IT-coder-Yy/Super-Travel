@@ -35,6 +35,30 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 upgrade.assert_profile(snapshot)
 
+    def test_old_manifest_uses_current_release_after_repository_rename(self):
+        import io
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location("native_upgrade", Path(__file__).with_name("smoke-native-update.py"))
+        upgrade = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(upgrade)
+        prefix = "https://github.com/owner/current/releases/download/v0.1.2"
+        with tempfile.TemporaryDirectory() as temporary:
+            target = Path(temporary) / "old-package"
+            for repository in ("previous", "current"):
+                recorded = f"https://github.com/owner/{repository}/releases/download/v0.1.2/SuperTravel%20Windows.exe"
+                canonical = upgrade.release_asset_url(recorded, prefix)
+                with patch.object(upgrade, "urlopen", return_value=io.BytesIO(b"release artifact")) as opened:
+                    upgrade.download(canonical, target, prefix)
+                    self.assertEqual(opened.call_args.args[0].full_url, prefix + "/SuperTravel%20Windows.exe")
+                    self.assertEqual(target.read_bytes(), b"release artifact")
+            for name in ("", ".", "..", "%2Ftmp%2Fartifact", "..%5Cartifact"):
+                with self.assertRaises(ValueError):
+                    upgrade.release_asset_url("https://github.com/owner/previous/releases/download/v0.1.2/" + name, prefix)
+            with patch.object(upgrade, "urlopen") as opened:
+                with self.assertRaises(ValueError):
+                    upgrade.download("https://example.invalid/asset.exe", target, prefix)
+                opened.assert_not_called()
+
     def make_part(self,root,target,version="0.1.0"):
         _,folder,_,extension=release.TARGETS[target]
         bundle=root/target/"bundle"

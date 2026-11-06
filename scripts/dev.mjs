@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -10,6 +10,8 @@ import { readFileSync } from 'node:fs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const localPython = resolve(root, 'backend', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 const python = process.env.STA_PYTHON || (existsSync(localPython) ? localPython : 'python');
+const assets = spawnSync(python, [resolve(root, 'scripts/prepare-pdf-assets.py')], { cwd: root, stdio: 'inherit', windowsHide: true });
+if (assets.error || assets.status !== 0) console.warn('PDF 资源尚未准备完成；其他功能可继续使用。联网后运行资源准备脚本并重启开发服务，再重试 PDF 导出。');
 const dataDir = resolve(root, '.local', 'dev-data');
 mkdirSync(dataDir, { recursive: true });
 const token = randomBytes(32).toString('hex');

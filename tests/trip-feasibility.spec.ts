@@ -64,7 +64,7 @@ test('查询路线显示、时间不足拦截、排序清理及过期证据兼�
   await page.reload();
   await expect(page.locator('.activities .trip-leg')).toContainText('公共交通约 20 分钟 · 1.2 公里');
   await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
-  await page.getByLabel('时间', { exact: true }).nth(1).fill('10:10');
+  await page.getByLabel('时间', { exact: true }).nth(1).fill('10:00');
   await expect(page.getByRole('dialog').getByRole('alert')).toContainText('接驳时间不足');
   await expect(page.getByRole('button', { name: '应用修改', exact: true })).toBeDisabled();
   await page.screenshot({ path: 'artifacts/trip-conflict-editor.png', fullPage: true });

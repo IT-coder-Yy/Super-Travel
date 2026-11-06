@@ -30,6 +30,9 @@ if not __package__:
 from backend.agent_service import AgentService
 from backend.model import ModelError
 from backend.trip_api import guard_trip_write, trip_router
+from backend.candidates import merge_candidate_fields, normalize_candidate_fields
+from backend.exports import export_router
+from backend.preferences import preference_router
 
 
 VERSION = os.environ.get("STA_APP_VERSION", "0.1.0")
@@ -63,6 +66,11 @@ class ConversationUpdate(ConversationInput):
 
 
 class Conversation(ConversationInput):
+    @field_validator("data")
+    @classmethod
+    def candidate_defaults(cls, value):
+        return normalize_candidate_fields(value)
+
     id: UUID
     revision: int = Field(ge=1)
     updated_at: AwareDatetime
@@ -204,9 +212,9 @@ class ConversationStore:
             current, previous = self._read(conversation_id)
             if payload.expected_revision != current.revision:
                 raise StoreError(409, "revision_conflict", "会话已被更新，请重新加载。", current_revision=current.revision)
-            data = payload.data
+            data = merge_candidate_fields(current.data, payload.data)
             guard_trip_write(current.data, data, StoreError)
-            if AgentService._active(current.data) and any(data.get(key) != current.data.get(key) for key in ("days", "draft", "draftTrip")):
+            if AgentService._active(current.data) and any(data.get(key) != current.data.get(key) for key in ("days", "draft", "draftTrip", "candidates", "draftCandidates")):
                 raise StoreError(409, "trip_busy", "请等待当前任务结束或取消后，再修改行程。")
             if "agentPending" in current.data:
                 data = {**data, **{key: current.data[key] for key in ("messages", "agent", "agentPending") if key in current.data}}
@@ -364,6 +372,8 @@ def create_app(data_dir: Path, token: str) -> FastAPI:
     app.state.agents = agents
     app.include_router(agents.router())
     app.include_router(trip_router(agents, store, StoreError))
+    app.include_router(export_router(store, StoreError))
+    app.include_router(preference_router(agents.preferences))
     app.add_middleware(LocalAccessMiddleware, token=token)
     app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_methods=["GET", "POST", "PUT"], allow_headers=["Authorization", "Content-Type"])
 

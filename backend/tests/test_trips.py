@@ -238,7 +238,7 @@ def test_trip_note_edit_keeps_existing_activity_id_while_new_place_gets_new_id()
     original_id = original["days"][0]["activities"][0]["id"]
     research = TripResearch(Maps(), "杭州", original["days"])
     changed = submitted()
-    changed["days"][0]["activities"][0]["description"] = "修改后的固定测试备注"
+    changed["days"][0]["activities"][0].update(description="修改后的固定测试备注", activity_id=original_id, replace_description=True)
     added_place = deepcopy(research.places[PLACE_ID])
     added_place.update(id="baidu:fixture-new", name="新固定测试地点")
     research.places[added_place["id"]] = added_place
@@ -262,10 +262,11 @@ def test_trip_completion_shows_summary_without_internal_step_tables_or_coordinat
         assert state["status"] == "completed"
         assert "内部地点表" in state["results"][0]["content"]
         assert "baidu:" not in state["content"] and "120.158" not in state["content"]
-        assert len(model.summary_calls) == 1
-        summary = json.loads(model.summary_calls[0][-1]["content"])
-        assert summary["completed_steps"] == [] and summary["trip_result"] == state["trip_result"]
-        assert summary["is_draft"] is False
+        assert not model.summary_calls
+        assert "行程已生成，请查看行程详情。" in state["content"]
+        assert "草稿" not in state["content"] and "已保存" not in state["content"]
+        for day in state["trip_result"]["days"]:
+            assert f"第 {day['day']} 天 {len(day['activities'])} 项活动" in state["content"]
     asyncio.run(run())
 
 

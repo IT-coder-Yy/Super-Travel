@@ -13,6 +13,9 @@
     "desktop:dev": "node scripts/desktop-build.mjs --dev",
     "desktop:build": "node scripts/desktop-build.mjs",
     "test:platform": "python scripts/test-platform.py",
+    "assets:prepare": "python scripts/prepare-pdf-assets.py",
+    "test:assets": "python scripts/test-pdf-assets.py",
+    "pretest:backend": "python scripts/prepare-pdf-assets.py",
     "test:backend": "python -m pytest backend/tests -q",
     "test:ui": "playwright test"
   },
