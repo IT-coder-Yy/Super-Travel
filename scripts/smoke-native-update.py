@@ -21,7 +21,7 @@ import sys
 import tarfile
 import tempfile
 import threading
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -38,6 +38,15 @@ def load_module(name: str, file: str):
 
 native = load_module("native_smoke", "smoke-native.py")
 release = load_module("prepare_release", "prepare-release.py")
+
+
+def release_asset_url(recorded_url: str, prefix: str) -> str:
+    # Historical manifests may retain a repository's previous name. Fetch only
+    # from the explicitly selected Release, whose checksum list is also verified.
+    name = unquote(urlparse(recorded_url).path.rsplit("/", 1)[-1])
+    if not name or name in (".", "..") or Path(name).name != name or "\\" in name:
+        raise ValueError("Unsafe published artifact filename")
+    return prefix + "/" + quote(name, safe="")
 
 
 def download(url: str, destination: Path, prefix: str) -> None:
@@ -114,7 +123,7 @@ def exercise(args) -> dict:
         previous = json.loads(old_manifest.read_text())
         if previous["version"] != args.old_version:
             raise ValueError("Published old manifest version mismatch")
-        old_url = previous["platforms"][platform]["url"]
+        old_url = release_asset_url(previous["platforms"][platform]["url"], prefix)
         old_name = unquote(urlparse(old_url).path.rsplit("/", 1)[-1])
         if Path(old_name).name != old_name:
             raise ValueError("Unsafe old artifact filename")

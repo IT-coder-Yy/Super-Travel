@@ -89,7 +89,7 @@ def exercise(args) -> dict:
         previous = json.loads(previous_manifest.read_text(encoding="utf-8"))
         if previous["version"] != args.old_version:
             raise ValueError("Published old version mismatch")
-        old_url = previous["platforms"][PLATFORM]["url"]
+        old_url = native_update.release_asset_url(previous["platforms"][PLATFORM]["url"], prefix)
         old_name = unquote(urlparse(old_url).path.rsplit("/", 1)[-1])
         if not old_name or Path(old_name).name != old_name:
             raise ValueError("Unsafe old package filename")
