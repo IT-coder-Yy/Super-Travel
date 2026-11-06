@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import platform
+import runpy
 import shutil
 import subprocess
 import sys
@@ -20,17 +21,29 @@ TARGETS = {
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", default=os.environ.get("TAURI_ENV_TARGET_TRIPLE"))
+    parser.add_argument("--allow-missing-pdf-assets", action="store_true", help="Development only: allow startup without PDF resources")
     args = parser.parse_args()
     native = TARGETS.get((platform.system(), platform.machine()))
     if not native or (args.target and args.target != native):
         raise SystemExit(f"PyInstaller must run natively: detected {native}, requested {args.target}. Use the matching CI runner.")
     target = args.target or native
+    asset_tool = runpy.run_path(str(ROOT / "scripts/prepare-pdf-assets.py"))
+    try:
+        assets = asset_tool["prepare"](ROOT / "backend/assets", ROOT / ".local/pdf-assets")
+    except (OSError, ValueError, RuntimeError, ImportError) as error:
+        if not args.allow_missing_pdf_assets:
+            raise
+        print(f"PDF resources unavailable in development: {error}; run scripts/prepare-pdf-assets.py and restart development before retrying PDF export.", file=sys.stderr)
+        assets = []
     work = ROOT / ".local" / "pyinstaller" / target
     work.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
                "--name", "supertravel-backend", "--distpath", str(work / "dist"),
                "--workpath", str(work / "build"), "--specpath", str(work),
-               "--paths", str(ROOT), "--collect-submodules", "uvicorn", str(ROOT / "backend" / "main.py")]
+               "--paths", str(ROOT), "--collect-submodules", "uvicorn",
+               *[value for path in assets for value in ("--add-data",
+                   f"{path}{os.pathsep}{path.relative_to(ROOT).as_posix() if path.is_dir() else path.parent.relative_to(ROOT).as_posix()}")],
+               str(ROOT / "backend" / "main.py")]
     subprocess.run(command, cwd=ROOT, check=True)
     extension = ".exe" if platform.system() == "Windows" else ""
     source = work / "dist" / f"supertravel-backend{extension}"

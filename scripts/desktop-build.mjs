@@ -25,6 +25,6 @@ try {
   process.env.STA_SHARED_TOOLS_URL = sharedToolsUrl(process.env);
   const config = await configureUpdater();
   run(python, ['scripts/generate-icons.py']);
-  run(python, ['scripts/build-sidecar.py', ...targetArgs]);
+  run(python, ['scripts/build-sidecar.py', ...targetArgs, ...(isDev ? ['--allow-missing-pdf-assets'] : [])]);
   run(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', isDev ? 'dev' : 'build', '--config', config, ...args]);
 } catch (error) { console.error(error.message); process.exitCode = 1; }

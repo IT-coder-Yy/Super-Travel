@@ -1,3 +1,5 @@
 -r requirements.txt
 pytest==8.3.4
 pyinstaller==6.20.0
+pypdf==6.21.4
+fonttools==4.68.0
