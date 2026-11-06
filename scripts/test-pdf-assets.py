@@ -111,13 +111,18 @@ class AssetsTests(unittest.TestCase):
         spec.loader.exec_module(builder)
         def unavailable(*args):
             raise RuntimeError("offline")
-        with patch.object(builder, "ROOT", self.root), patch.object(builder.platform, "system", return_value="Windows"), patch.object(builder.platform, "machine", return_value="AMD64"), patch.object(builder.runpy, "run_path", return_value={"prepare": unavailable}), patch.object(builder.subprocess, "run") as freeze, patch.object(builder.shutil, "copy2"):
+        def fake_freeze(*args, **kwargs):
+            binary = self.root / ".local/pyinstaller/x86_64-pc-windows-msvc/dist/supertravel-backend.exe"
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            binary.write_bytes(b"test sidecar")
+        with patch.object(builder, "ROOT", self.root), patch.object(builder.platform, "system", return_value="Windows"), patch.object(builder.platform, "machine", return_value="AMD64"), patch.object(builder.runpy, "run_path", return_value={"prepare": unavailable}), patch.object(builder.subprocess, "run", side_effect=fake_freeze) as freeze:
             with patch("sys.argv", ["build-sidecar.py"]), self.assertRaisesRegex(RuntimeError, "offline"):
                 builder.main()
             freeze.assert_not_called()
             with patch("sys.argv", ["build-sidecar.py", "--allow-missing-pdf-assets"]):
                 builder.main()
             self.assertNotIn("--add-data", freeze.call_args.args[0])
+            self.assertEqual((self.root / "src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe").read_bytes(), b"test sidecar")
 
     def test_ready_assets_work_offline_and_bundle_excludes_local_reports(self):
         output = self.root / "assets"
