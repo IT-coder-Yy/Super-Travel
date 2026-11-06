@@ -1,21 +1,34 @@
 export type Place = { id: string; name: string; address: string; latitude: number; longitude: number; coordinateSystem: 'wgs84'; provider: 'baidu' | 'amap'; sourceLocation?: { latitude: number; longitude: number; coordinateSystem: 'bd09ll' | 'gcj02' } | null }
+export type PlaceCategory = '景点' | '餐饮' | '购物'
+export type PlaceSearchResult = { selection_id: string; name: string; address: string; provider: Place['provider'] }
+export type PlaceSelection = { selection_id: string; day: number; activity_id: string | null; time: string; duration_minutes: number; description: string }
+export type ActivityMove = { activity_id: string; target_day: number; target_index: number; time: string }
+export type ActivityDeletePreview = { revision: number; activity_id: string; title: string; day: number; has_note: boolean; is_favorite: boolean; has_map_point: boolean; affected_routes: number }
 export type TripMeta = { destination: string; summary: string; generatedAt: string; transportMode?: 'walking' | 'driving' | 'transit' | null }
 export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null }
 export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
+export type Candidate = Omit<Activity, 'time' | 'x' | 'y' | 'incomingRoute' | 'place'> & { place: Place; destination: string }
+export type CandidatePlaceSelection = Pick<PlaceSelection, 'selection_id' | 'duration_minutes' | 'description'>
+export type CandidateSlot = { option_id: string; earliest_start: string; latest_start: string; position: number; warnings: string[] }
+export type CandidateSlots = { revision: number; options: CandidateSlot[]; reason?: string }
 export type TripDay = { day: number; title: string; subtitle: string; activities: Activity[] }
 export type Message = { id: string; role: 'user' | 'assistant'; content: string }
-export type AgentState = { persisted?: boolean; run_id?: string | null; status: 'idle' | 'running' | 'replanning' | 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'interrupted'; plan?: string[]; results?: { step: string; content: string }[]; content?: string; error?: string | null; tool_calls?: number }
-export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null; trip?: TripMeta; draftTrip?: TripMeta | null; previousTrip?: { days: TripDay[]; trip: TripMeta } | null; agent?: AgentState; agentPending?: boolean }
+export type AgentState = { preference_summary?: string; persisted?: boolean; run_id?: string | null; status: 'idle' | 'running' | 'replanning' | 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'interrupted'; plan?: string[]; results?: { step: string; content: string }[]; content?: string; error?: string | null; tool_calls?: number }
+export type WorkspaceData = { schema: 1; days: TripDay[]; selectedDay: number; messages: Message[]; favorites: string[]; draft: TripDay[] | null; candidates?: Candidate[]; draftCandidates?: Candidate[] | null; trip?: TripMeta; draftTrip?: TripMeta | null; previousTrip?: { days: TripDay[]; trip: TripMeta; candidates?: Candidate[]; removedFavorites?: string[] } | null; agent?: AgentState; agentPending?: boolean }
 export type ConversationSummary = { id: string; title: string; revision: number; updated_at: string }
 export type Conversation = ConversationSummary & { data: WorkspaceData }
+export type TravelPreferences = { schema: 1; enabled: boolean; budgetAmountFen: number | null; pace: 'relaxed' | 'balanced' | 'packed' | null; dietaryNotes: string; companionMode: 'solo' | 'couple' | 'family' | 'friends' | null }
+export type TravelPreferencesResponse = { preferences: TravelPreferences; error?: string }
+export type TripExportFormat = 'markdown' | 'pdf'
+export type TripExportSnapshot = { revision: number; filename: string; markdown: string; pdfBase64?: string; previewText?: string }
 export type RecoveryOption = { id: string; title: string; message: string; backup_updated_at: string | null; token: string | null }
 
 export function createWorkspace(): WorkspaceData {
-  return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, days: [] }
+  return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, candidates: [], draftCandidates: null, days: [] }
 }
 
 export function createExample(): WorkspaceData {
-  return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, days: [
+  return { schema: 1, selectedDay: 1, favorites: [], messages: [], draft: null, candidates: [], draftCandidates: null, days: [
     { day: 1, title: '把今天，交给西湖。', subtitle: '沿着湖岸，慢慢发现杭州', activities: [
       { id: 'bridge', title: '断桥残雪', time: '09:30', duration: '约 1.5 小时', description: '从这里开始，沿着白堤漫步，感受西湖的诗意。', x: 1010, y: 235 },
       { id: 'lunch', title: '湖滨午餐', time: '12:00', duration: '约 1.5 小时', description: '在湖滨寻一处小馆，尝尝杭帮菜，感受烟火气。', x: 1080, y: 430 },
@@ -33,6 +46,10 @@ export function createExample(): WorkspaceData {
     ] },
   ] }
 }
+
+export const hasTripDraft = (data: WorkspaceData) => data.draft != null || data.draftCandidates != null
+export const currentCandidates = (data: WorkspaceData): Candidate[] => hasTripDraft(data) ? data.draftCandidates ?? data.candidates ?? [] : data.candidates ?? []
+export const beginTripDraft = (data: WorkspaceData): WorkspaceData => ({ ...data, draft: data.draft ?? structuredClone(data.days), draftTrip: data.draftTrip ?? data.trip ?? null, draftCandidates: data.draftCandidates ?? structuredClone(data.candidates ?? []) })
 
 function validPlace(value: unknown): value is Place {
   if (!value || typeof value !== 'object') return false
@@ -68,15 +85,22 @@ function validRoute(route: TripRoute): boolean {
     (route.status !== 'verified' || route.durationMinutes != null)
 }
 
+function validCandidates(value: unknown): value is Candidate[] {
+  return Array.isArray(value) && value.every(candidate => candidate && typeof candidate.id === 'string' &&
+    typeof candidate.title === 'string' && typeof candidate.duration === 'string' && typeof candidate.description === 'string' && typeof candidate.destination === 'string' && validPlace(candidate.place) &&
+    candidate.time === undefined && candidate.x === undefined && candidate.y === undefined && candidate.incomingRoute === undefined &&
+    (candidate.cost == null || Number.isSafeInteger(candidate.cost.amountFen) && candidate.cost.amountFen >= 0 && candidate.cost.amountFen <= 100000000 && candidate.cost.currency === 'CNY' && candidate.cost.source === 'user'))
+}
+
 export function isWorkspaceData(value: unknown): value is WorkspaceData {
   if (!value || typeof value !== 'object') return false
   const data = value as Partial<WorkspaceData>
   return data.schema === 1 && validDays(data.days) && typeof data.selectedDay === 'number' &&
     (data.trip === undefined || validTrip(data.trip)) && (data.draftTrip == null || validTrip(data.draftTrip)) &&
-    (data.previousTrip == null || validTrip(data.previousTrip.trip) && validDays(data.previousTrip.days)) &&
+    (data.previousTrip == null || validTrip(data.previousTrip.trip) && validDays(data.previousTrip.days) && (data.previousTrip.candidates === undefined || validCandidates(data.previousTrip.candidates)) && (data.previousTrip.removedFavorites === undefined || Array.isArray(data.previousTrip.removedFavorites) && data.previousTrip.removedFavorites.every(id => typeof id === 'string'))) &&
     (data.agentPending === undefined || typeof data.agentPending === 'boolean') &&
-    (data.agent === undefined || !!data.agent && typeof data.agent === 'object' && ['idle', 'running', 'replanning', 'completed', 'failed', 'cancelled', 'needs_input', 'interrupted'].includes(data.agent.status) && (data.agent.plan === undefined || Array.isArray(data.agent.plan) && data.agent.plan.every(item => typeof item === 'string')) && (data.agent.content === undefined || typeof data.agent.content === 'string') && (data.agent.error == null || typeof data.agent.error === 'string')) &&
+    (data.agent === undefined || !!data.agent && typeof data.agent === 'object' && ['idle', 'running', 'replanning', 'completed', 'failed', 'cancelled', 'needs_input', 'interrupted'].includes(data.agent.status) && (data.agent.plan === undefined || Array.isArray(data.agent.plan) && data.agent.plan.every(item => typeof item === 'string')) && (data.agent.content === undefined || typeof data.agent.content === 'string') && (data.agent.error == null || typeof data.agent.error === 'string') && (data.agent.preference_summary === undefined || typeof data.agent.preference_summary === 'string')) &&
     Array.isArray(data.favorites) && data.favorites.every(item => typeof item === 'string') &&
     Array.isArray(data.messages) && data.messages.every(message => message && typeof message.id === 'string' && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string') &&
-    (data.draft === null || validDays(data.draft))
+    (data.draft === null || validDays(data.draft)) && (data.candidates === undefined || validCandidates(data.candidates)) && (data.draftCandidates == null || validCandidates(data.draftCandidates))
 }

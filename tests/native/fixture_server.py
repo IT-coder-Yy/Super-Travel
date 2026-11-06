@@ -68,9 +68,9 @@ def model_reply(payload):
         current = context.get("current_trip")
         if current and any(word in context["request"] for word in ("调整", "修改")):
             days = [{"day": day["day"], "title": day["title"], "subtitle": day["subtitle"], "activities": [
-                {"place_id": activity["place"]["id"], "time": activity["time"],
+                {"activity_id": activity["id"], "place_id": activity["place"]["id"], "time": activity["time"],
                  "duration_minutes": int(re.search(r"\d+", activity["duration"])[0]),
-                 "description": "固定测试调整：改为慢游，保留已有时间。"} for activity in day["activities"]]} for day in current["days"]]
+                 "description": activity["description"]} for activity in day["activities"]]} for day in current["days"]]
         else:
             days = [{"day": day, "title": f"固定测试第{day}天", "subtitle": "固定验收资料", "activities": [
                 {"place_id": "baidu:fixture-park", "time": "09:00", "duration_minutes": 60, "description": "固定测试安排，并非实时旅行建议。"},

@@ -1,5 +1,10 @@
 import type { Activity, TripDay, TripRoute } from './types'
 
+export function tripOverview(days: TripDay[]) {
+  const entries = days.map(day => day.activities.length ? `第 ${day.day} 天 ${day.activities.length} 项活动` : `第 ${day.day} 天自由安排`)
+  return `${days.length} 天行程；${entries.join('；')}。`
+}
+
 const modes = { walking: '步行', driving: '驾车', transit: '公共交通' }
 const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
 export const formatCost = (amountFen: number) => `¥${(amountFen / 100).toFixed(2)}`

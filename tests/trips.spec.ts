@@ -41,7 +41,8 @@ test('真实业务链路的离线回归：生成、地图点、聊天草稿、�
   await expect(page.locator('.draft-label')).toHaveText('修改草稿');
   const pending = await read();
   expect(pending.data.days).toEqual(formal.data.days);
-  expect(pending.data.draft[0].activities[0].description).toContain('固定测试调整');
+  expect(pending.data.draft[0].activities[0].duration).toBe('约 75 分钟');
+  expect(pending.data.draft[0].activities[0].description).toBe(formal.data.days[0].activities[0].description);
   await page.getByRole('button', { name: '继续编辑草稿', exact: true }).click();
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
