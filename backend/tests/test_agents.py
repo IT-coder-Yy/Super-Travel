@@ -528,23 +528,45 @@ def test_trip_tool_budget_is_bounded_and_respects_explicit_limit(days, explicit,
     asyncio.run(run())
 
 
-def test_trip_summary_uses_structured_result_only_and_identifies_draft():
+@pytest.mark.parametrize("is_draft", [False, True])
+@pytest.mark.parametrize("counts,overview", [([1, 3], "2 天行程；第 1 天 1 项活动；第 2 天 3 项活动。"),
+    ([0, 1], "2 天行程；第 1 天自由安排；第 2 天 1 项活动。")])
+def test_trip_receipt_uses_validated_days_and_draft_state_without_model(is_draft, counts, overview):
     async def run():
-        trip = {"days": [{"day": 1, "activities": []}], "trip": {"destination": "杭州"}}
-        def summarize(messages):
-            context = json.loads(messages[-1]["content"])
-            assert context["trip_result"] == trip and context["is_draft"] is True
-            assert context["completed_steps"] == []
-            assert "不可用的步骤文字" not in messages[-1]["content"]
-            raise ModelError("model_timeout", "provider details")
-
+        trip = {"days": [{"day": i + 1, "title": "过期标题存在冲突", "subtitle": "旧版15:15",
+            "activities": [{"time": "15:30", "description": "用户备注不可放入回执"} for _ in range(count)]}
+            for i, count in enumerate(counts)], "trip": {"destination": "杭州", "summary": "旧概述每天2项"}}
+        before = deepcopy(trip)
+        def summarize(_messages):
+            raise AssertionError("Structured trip completion must not call the model")
         model = FakeModel([], summarize=summarize)
         session, _ = session_for(model)
         session._run_id = "summary-test"
-        content = await session._summarize("summary-test", "修改备注", [{"step": "旧步骤", "content": "不可用的步骤文字"}], trip, is_draft=True)
-        assert "修改草稿已生成，请检查后应用" in content
-        assert "不可用的步骤文字" not in content and "provider details" not in content
-        assert len(model.summary_calls) == 1
+        session._state["preference_summary"] = "同行：亲子（常用偏好）"
+        content = await session._summarize("summary-test", "修改时间", [{"step": "旧步骤", "content": "过期步骤文字"}], trip,
+            is_draft=is_draft, travel_preferences={"budgetAmountFen": None, "pace": None, "dietaryNotes": "", "companionMode": "family"},
+            history=[{"role": "assistant", "content": "旧版15:15存在冲突"}])
+        status = "修改草稿已生成，尚未应用。请核对行程详情后应用。" if is_draft else "行程已生成，请查看行程详情。"
+        assert content == f"杭州：{overview}\n\n{status}"
+        assert trip == before and not model.summary_calls
+        assert session.snapshot()["preference_summary"] == "同行：亲子（常用偏好）"
+        assert "已保存" not in content and "冲突" not in content and "15:15" not in content
+        await session.aclose()
+    asyncio.run(run())
+
+
+def test_cancelled_trip_receipt_cannot_return_after_progress_callback():
+    async def run():
+        session, _ = session_for(FakeModel([]))
+        session._run_id = "receipt-cancelled"
+        async def cancelled(_state):
+            session._run_id = None
+        session.on_state = cancelled
+        with pytest.raises(asyncio.CancelledError):
+            await session._summarize("receipt-cancelled", "修改时间", [],
+                {"days": [{"day": 1, "activities": [{}]}], "trip": {"destination": "杭州"}}, is_draft=True)
+        assert not session.model.summary_calls
+        await session.aclose()
     asyncio.run(run())
 
 
@@ -574,4 +596,21 @@ def test_executor_place_options_omit_coordinates_without_changing_backend_eviden
         assert json.loads(result["content"][0]["text"])["places"] == [expected]
         await session._execute_step("projection-test", "安排杭州", "整理已有地点", [], {}, research=research, trip=TripRequest(destination="杭州", days=1))
         assert research.places[place["id"]] == place
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("kind", ["answer", "clarification", "progress"])
+def test_nonplan_trip_is_rejected_even_when_destination_and_days_are_known(kind):
+    async def run():
+        invalid = reply(name="route_request", arguments={"kind": kind, "content": "先确认必要条件。", "steps": [],
+                                                        "trip": {"destination": "杭州", "days": 2}})
+        model, tools = FakeModel([invalid]), FakeTools()
+        session, events = session_for(model, tools)
+        with pytest.raises(ModelError) as error:
+            await session.chat("生成杭州2天行程，本次不用默认偏好，先就必要缺项澄清")
+        assert error.value.code == "agent_plan"
+        assert len(model.planner_calls) == 1 and not model.executor_calls
+        assert tools.listed == 0 and not tools.calls and not events
+        assert session.snapshot()["status"] == "idle" and session._task is None
+        await session.aclose()
     asyncio.run(run())

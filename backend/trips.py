@@ -82,6 +82,9 @@ class Place(StrictModel):
 
 class StopInput(StrictModel):
     place_id: str = Field(min_length=1, max_length=200)
+    activity_id: str | None = Field(default=None, min_length=1, max_length=200, description="修改已有活动时引用 current_trip 中的活动 id；仅用户明确安排候选时可引用 current_candidates 的 id。跨日保持原 id，必须对应相同 place_id。")
+    replace_description: bool = Field(default=False, description="仅当用户明确要求修改该活动备注时为 true；普通时间、顺序或日期调整保持 false。")
+    replace_duration: bool = Field(default=False, description="仅用户明确要求修改候选的停留时长时为 true；候选普通排入保留原时长。已有日程活动仍使用 duration_minutes。")
     time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     duration_minutes: int = Field(ge=15, le=720)
     description: str = Field(min_length=1, max_length=500)
@@ -91,7 +94,7 @@ class DayInput(StrictModel):
     day: int = Field(ge=1, le=7)
     title: str = Field(min_length=1, max_length=100)
     subtitle: str = Field(min_length=1, max_length=200)
-    activities: list[StopInput] = Field(min_length=1, max_length=8)
+    activities: list[StopInput] = Field(max_length=8)
 
 
 class TripInput(StrictModel):
@@ -129,7 +132,7 @@ class TripDay(StrictModel):
     day: int = Field(ge=1, le=7)
     title: str = Field(min_length=1, max_length=100)
     subtitle: str = Field(min_length=1, max_length=200)
-    activities: list[TripActivity] = Field(min_length=1, max_length=8)
+    activities: list[TripActivity] = Field(max_length=8)
 
 
 class TripResult(StrictModel):
@@ -153,12 +156,20 @@ class TripResult(StrictModel):
                 identifiers.add(activity.id)
                 places.add(activity.place.id)
                 end = start + duration
+        if not identifiers:
+            raise ValueError("整份行程至少需要保留一个活动。")
         return self
+
+
+def trip_overview(days) -> str:
+    entries = [f"第 {day['day']} 天 {len(day['activities'])} 项活动" if day["activities"] else f"第 {day['day']} 天自由安排" for day in days]
+    return f"{len(days)} 天行程；" + "；".join(entries) + "。"
 
 
 def validate_result(value: dict) -> dict:
     result = TripResult.model_validate(value).model_dump(exclude_none=True)
     check_transfers(result["days"], result["trip"].get("transportMode"))
+    result["trip"]["summary"] = trip_overview(result["days"])
     return result
 
 
@@ -193,7 +204,7 @@ ROUTE_TOOL = {"name": "query_trip_route", "description": "查询两个已验证�
     "to_place_id": {"type": "string", "minLength": 1, "maxLength": 200}, "mode": {"type": "string", "enum": ["walking", "driving", "transit"]}},
     "required": ["from_place_id", "to_place_id"], "additionalProperties": False,
 }}
-SUBMIT_TOOL = {"name": "submit_trip", "description": "完成行程：只能引用 available_places / search_trip_places 的真实 place_id。每天按时间升序，时段不得重叠。时间和停留为建议，未核实的费用、营业、预约须注明待确认。", "inputSchema": TripInput.model_json_schema()}
+SUBMIT_TOOL = {"name": "submit_trip", "description": "完成行程：只能引用 available_places / search_trip_places 的真实 place_id；仅用户明确安排候选时可通过 current_candidates 的 activity_id 引用其真实地点。已有活动须引用 current_trip 的 activity_id；普通调整保留原备注，明确改备注才设置 replace_description=true。首次生成每天有活动，编辑可保留空日，整程至少一项。每天按时间升序且不重叠；未核实信息须注明待确认。", "inputSchema": TripInput.model_json_schema()}
 
 
 def to_wgs84(longitude: float, latitude: float, provider: str) -> tuple[float, float]:
@@ -235,13 +246,19 @@ def _map_payload(result):
 
 
 class TripResearch:
-    def __init__(self, tools, destination: str, existing_days: list | None = None, *, map_provider: str | None = None):
+    def __init__(self, tools, destination: str, existing_days: list | None = None, *, map_provider: str | None = None, existing_candidates: list | None = None):
         self.tools, self.destination = tools, destination
         self.map_provider = map_provider
         self.places: dict[str, dict] = {}
-        self.activity_ids: dict[tuple[int, str], str] = {}
+        self.editing = bool(existing_days)
+        self.activities: dict[str, dict] = {}
+        self.candidates: dict[str, dict] = {}
+        self.submitted_candidate_ids: list[str] = []
+        if existing_candidates:
+            from backend.candidates import Candidate, validate_candidate_snapshot
+            validate_candidate_snapshot(existing_days or [], existing_candidates)
+            self.candidates = {item["id"]: Candidate.model_validate(item).model_dump(exclude_none=True) for item in existing_candidates}
         self.routes: dict[tuple[str, str, str], dict] = {}
-        self.costs: dict[tuple[int, str], dict] = {}
         self.unavailable: set[str] = set()
         for day in existing_days or []:
             for activity in day.get("activities", []):
@@ -251,9 +268,10 @@ class TripResearch:
                         self.places[place["id"]] = place
                         identifier, number = activity.get("id"), day.get("day")
                         if isinstance(identifier, str) and 1 <= len(identifier.strip()) <= 200 and type(number) is int and 1 <= number <= 7:
-                            self.activity_ids[number, place["id"]] = identifier.strip()
-                        if activity.get("cost") is not None:
-                            self.costs[number, place["id"]] = ActivityCost.model_validate(activity["cost"]).model_dump()
+                            previous = {"id": identifier.strip(), "day": number, "place_id": place["id"], "description": activity.get("description")}
+                            if activity.get("cost") is not None:
+                                previous["cost"] = ActivityCost.model_validate(activity["cost"]).model_dump()
+                            self.activities[identifier.strip()] = previous
                         if activity.get("incomingRoute") is not None:
                             route = IncomingRoute.model_validate(activity["incomingRoute"]).model_dump(exclude_none=True)
                             if route["toPlaceId"] == place["id"] and route["status"] == "verified" and route_fresh(route):
@@ -316,7 +334,12 @@ class TripResearch:
         return list(found.values())
 
     async def route(self, from_place_id: str, to_place_id: str, mode: str = "walking") -> dict:
-        origin, destination = self.places.get(from_place_id), self.places.get(to_place_id)
+        candidate_places = {item["place"]["id"]: item["place"] for item in self.candidates.values()
+                            if item["destination"].removesuffix("市") == self.destination.removesuffix("市")}
+        origin = self.places.get(from_place_id) or candidate_places.get(from_place_id)
+        destination = self.places.get(to_place_id) or candidate_places.get(to_place_id)
+        if self.map_provider and any(place and place["provider"] != self.map_provider for place in (origin, destination)):
+            raise ToolError("tool_arguments", False, "地点来源不符合用户指定的地图服务。")
         if not origin or not destination or from_place_id == to_place_id or mode not in MODES:
             raise ToolError("tool_arguments", False, "请先查询两个不同的真实地点，并选择有效交通方式。")
         key = from_place_id, to_place_id, mode
@@ -327,19 +350,51 @@ class TripResearch:
         return deepcopy(self.routes[key])
 
     def submit(self, arguments: dict, request: TripRequest) -> dict:
+        self.submitted_candidate_ids = []
         try:
             planned = TripInput.model_validate(arguments)
         except ValidationError:
             raise ValueError("行程字段无效，请检查天数、时间与停留时长。") from None
         if [day.day for day in planned.days] != list(range(1, request.days + 1)):
             raise ValueError("行程天数与请求不一致，或日期编号不连续。")
+        claimed = set()
+        selected_candidates = []
+        for day in planned.days:
+            for stop in day.activities:
+                if stop.activity_id is not None:
+                    candidate = self.candidates.get(stop.activity_id)
+                    previous = candidate or self.activities.get(stop.activity_id)
+                    place_id = candidate["place"]["id"] if candidate else previous.get("place_id") if previous else None
+                    if not previous or place_id != stop.place_id:
+                        raise ValueError("activity_id 必须引用当前行程或候选池中相同地点的已有活动。")
+                    if candidate:
+                        if candidate["destination"].removesuffix("市") != request.destination.removesuffix("市"):
+                            raise ValueError("候选地点不属于本次目的地，不能排入；候选仍会保留。")
+                        selected_candidates.append(stop.activity_id)
+                        if not stop.replace_duration:
+                            stop.duration_minutes = int(re.search(r"\d+", candidate["duration"])[0])
+                    if stop.activity_id in claimed:
+                        raise ValueError("同一个 activity_id 不能在行程中重复引用。")
+                    claimed.add(stop.activity_id)
+        # Reserve unchanged-day visits before an earlier new visit can claim their identity.
+        for day in planned.days:
+            for stop in day.activities:
+                if stop.activity_id is None:
+                    same_day = [item for identifier, item in self.activities.items()
+                                if identifier not in claimed and item["day"] == day.day and item["place_id"] == stop.place_id]
+                    if len(same_day) == 1:
+                        stop.activity_id = same_day[0]["id"]
+                        claimed.add(stop.activity_id)
         days = []
         for day in planned.days:
+            if not self.editing and not day.activities:
+                raise ValueError("首次生成行程时每天至少需要安排一个活动。")
             if request.stops_per_day is not None and len(day.activities) != request.stops_per_day:
                 raise ValueError(f"每天必须恰好安排 {request.stops_per_day} 个不同地点，请按用户要求调整。")
             end, used, activities = 0, set(), []
             for stop in day.activities:
-                place = self.places.get(stop.place_id)
+                candidate = self.candidates.get(stop.activity_id) if stop.activity_id else None
+                place = candidate["place"] if candidate else self.places.get(stop.place_id)
                 if not place:
                     raise ValueError("行程引用了未经地图查询验证的地点，请先 search_trip_places。")
                 if request.map_provider and place["provider"] != request.map_provider:
@@ -351,18 +406,30 @@ class TripResearch:
                     raise ValueError("活动时段重叠或跨越当天，请调整时间。")
                 used.add(stop.place_id)
                 end = start + stop.duration_minutes
-                activities.append({"id": self.activity_ids.get((day.day, place["id"])) or str(uuid4()), "title": place["name"], "time": stop.time,
-                    "duration": f"约 {stop.duration_minutes} 分钟", "description": stop.description,
+                previous = candidate or (self.activities.get(stop.activity_id) if stop.activity_id else None)
+                if stop.activity_id is None:
+                    candidates = [item for identifier, item in self.activities.items() if identifier not in claimed and item["place_id"] == stop.place_id]
+                    destinations = sum(item.activity_id is None and item.place_id == stop.place_id for target in planned.days for item in target.activities)
+                    if len(candidates) == 1 and destinations == 1:
+                        previous = candidates[0]
+                    elif candidates:
+                        raise ValueError("同一地点对应多个已有活动或多个目标安排，请提供 activity_id 明确要保留哪一项。")
+                    if previous:
+                        claimed.add(previous["id"])
+                activities.append({"id": previous["id"] if previous else str(uuid4()), "title": place["name"], "time": stop.time,
+                    "duration": f"约 {stop.duration_minutes} 分钟", "description": previous["description"] if previous and not stop.replace_description else stop.description,
                     "x": 0, "y": 0, "place": deepcopy(place)})
-                if (day.day, place["id"]) in self.costs:
-                    activities[-1]["cost"] = deepcopy(self.costs[day.day, place["id"]])
+                if previous and "cost" in previous:
+                    activities[-1]["cost"] = deepcopy(previous["cost"])
                 if len(activities) > 1:
                     origin = activities[-2]["place"]
                     route = self.routes.get((origin["id"], place["id"], request.transport_mode))
                     activities[-1]["incomingRoute"] = deepcopy(route) if route and route_fresh(route) else unknown_route(origin, place, request.transport_mode)
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})
-        return validate_result({"days": days, "trip": {"destination": request.destination, "summary": planned.summary,
+        result = validate_result({"days": days, "trip": {"destination": request.destination, "summary": planned.summary,
                                       "generatedAt": datetime.now(timezone.utc).isoformat(), "transportMode": request.transport_mode}})
+        self.submitted_candidate_ids = selected_candidates
+        return result
 
 
 COORDTRANSFORM_LICENSE = """The MIT License (MIT)
