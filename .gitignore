@@ -19,5 +19,12 @@ playwright-report/
 artifacts/
 tools-service/
 
-# Generated PDF resources.
+# Generated PDF resources and local development records.
 /backend/assets/
+/DESIGN.md
+/PRODUCT.md
+/scripts/UPDATE-REHEARSAL.md
+/docs/*
+!/docs/README.md
+!/docs/RELEASE_NOTES.md
+!/docs/preview.png
