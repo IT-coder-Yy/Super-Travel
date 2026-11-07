@@ -5,40 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
-    "tools:dev": "node scripts/tools-dev.mjs",
-    "web": "vite --host 127.0.0.1 --port 1420 --strictPort",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 1420 --strictPort",
-    "tauri": "tauri",
+    "tools:dev": "node server/scripts/tools-dev.mjs",
+    "web": "npm run web --workspace @supertravel/client --",
+    "build": "npm run build --workspace @supertravel/client --",
+    "preview": "npm run preview --workspace @supertravel/client --",
+    "tauri": "npm run tauri --workspace @supertravel/client --",
+    "test:ui": "npm run test:ui --workspace @supertravel/client --",
     "desktop:dev": "node scripts/desktop-build.mjs --dev",
     "desktop:build": "node scripts/desktop-build.mjs",
-    "test:platform": "python scripts/test-platform.py",
-    "assets:prepare": "python scripts/prepare-pdf-assets.py",
-    "test:assets": "python scripts/test-pdf-assets.py",
-    "pretest:backend": "python scripts/prepare-pdf-assets.py",
-    "test:backend": "python -m pytest backend/tests -q",
-    "test:ui": "playwright test"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "2.12.4",
-    "@tauri-apps/plugin-dialog": "2.8.3",
-    "leaflet": "1.9.4",
-    "lucide-react": "1.61.0",
-    "react": "19.3.1",
-    "react-dom": "19.3.1"
-  },
-  "devDependencies": {
-    "@playwright/test": "1.64.1",
-    "@tauri-apps/cli": "2.12.4",
-    "@types/leaflet": "1.9.22",
-    "@types/node": "26.6.5",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.1.2",
-    "typescript": "7.0.2",
-    "vite": "8.3.5"
+    "test:platform": "uv run --project server --locked python scripts/test-platform.py",
+    "assets:prepare": "uv run --project server --locked python server/scripts/prepare-pdf-assets.py",
+    "test:assets": "uv run --project server --locked python server/scripts/test-pdf-assets.py",
+    "pretest:backend": "npm run assets:prepare",
+    "test:backend": "uv run --project server --locked python -m pytest server/tests client/tests/native -q"
   },
   "engines": {
     "node": ">=22.12.0"
-  }
+  },
+  "workspaces": [
+    "client"
+  ]
 }
