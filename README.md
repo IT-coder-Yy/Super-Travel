@@ -27,18 +27,17 @@
 
 ## 本地开发
 
-需要 Node.js 22.12+ 和 Python 3.13。桌面开发还需要 Rust 1.90+ 与 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
+需要 Node.js 22.12+、Python 3.13 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。桌面开发还需要 Rust 1.90+ 与 [Tauri 平台依赖](https://v2.tauri.app/start/prerequisites/)。
 
 Linux 运行与界面验收需有中文字体；精简 Ubuntu/Debian 环境可安装 `fonts-noto-cjk`。
 
 ```powershell
 npm ci
-python -m venv backend/.venv
-# Windows
-backend/.venv/Scripts/python -m pip install -r backend/requirements-dev.txt
-# macOS / Linux 将上一行的 Python 路径替换为 backend/.venv/bin/python
+uv sync --project server --locked
 npm run dev
 ```
+
+根目录的 npm workspace 管理 `client/`，整个仓库共用一份 `package-lock.json`。后端依赖仅维护 `server/pyproject.toml` 与 `server/uv.lock`；运行 `uv add --project server 包名` 添加运行依赖，使用 `--dev` 添加测试或构建依赖，再提交更新后的两个文件。`uv sync --project server --locked` 会校验锁文件，不会自行升级版本。也可以进入 `server/` 后运行 `uv sync --locked`、`uv run pytest`。
 
 浏览器打开 `http://127.0.0.1:1420`。此命令同时启动独立 Python 与 Vite，开发会话保存在 `.local/dev-data`，不接触旧项目的数据。单独执行 `npm run web` 只预览前端，不能保存会话；浏览器模式不安装桌面更新。
 
@@ -48,46 +47,35 @@ npm run dev
 npm run desktop:dev
 ```
 
-桌面壳负责启动自己的 Python，不要把 `npm run dev` 与 `desktop:dev` 同时运行。可用 `STA_PYTHON` 显式指定解释器；优先使用本工程的 `backend/.venv`。
+桌面壳负责启动自己的 Python，不要把 `npm run dev` 与 `desktop:dev` 同时运行。可用 `STA_PYTHON` 显式指定解释器；优先使用本工程的 `server/.venv`。
 
-桌面使用工具前，开发者需在另一个终端启动工具服务。按 [服务环境模板](deploy/shared-tools/.env.example) 准备自己的 `.local/tools.env`，仅填写四项工具凭据，然后执行：
+桌面使用工具前，开发者需在另一个终端启动工具服务。按 [服务环境模板](server/.env.example) 准备自己的 `.local/tools.env`，仅填写四项工具凭据，然后执行：
 
 ```powershell
 $env:STA_DEV_ENV_FILE = ".local/tools.env"
 npm run tools:dev
 ```
 
-服务默认监听 `127.0.0.1:8080`；可用 `STA_TOOLS_PORT` 改端口，并在客户端设置中填写对应地址。模型 Key 留在客户端模型设置中，不放进工具服务环境文件。当前没有已上线的公共工具服务，安装客户端不会自动启动这项服务；详细说明见 [工具服务](deploy/shared-tools/README.md)。
+服务默认监听 `127.0.0.1:8080`；可用 `STA_TOOLS_PORT` 改端口，并在客户端设置中填写对应地址。模型 Key 留在客户端模型设置中，不放进工具服务环境文件。当前没有已上线的公共工具服务，安装客户端不会自动启动这项服务；详细说明见 [后端说明](server/README.md)。
 
 ## PDF 资源
 
-字体和表情图片由脚本下载，不保存在 Git 中。`npm run dev`、`npm run desktop:dev` 会在启动前检查；桌面正式构建和 CI 也会自动准备。首次需联网下载固定版本并校验摘要，后续复用本地完整资源；下载中断或文件损坏可重试，不会把未校验的半文件当作可用资源。
-
-手动准备（macOS/Linux 使用 `backend/.venv/bin/python`）：
-
-```powershell
-backend/.venv/Scripts/python scripts/prepare-pdf-assets.py
-```
-
-生成文件在 `backend/assets/`，源下载缓存在 `.local/pdf-assets/`，均被 Git 忽略。首次无网且资源缺失时，开发界面仍可启动，但 PDF 导出会提示资源不可用；联网运行上述命令并重启开发服务后重试。正式打包遇到不完整资源会停止，成功生成的安装包内含全部资源，安装后离线导出。
-
-资源使用 [Noto Sans SC](https://github.com/google/fonts/tree/6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec/ofl/notosanssc)（SIL OFL 1.1，固定 400 字重）、[Jigmo 2025-09-12](https://kamichikoichi.github.io/jigmo/)（CC0 1.0，标准 CJK 回退子集）和 [Twemoji 17.0.3](https://github.com/jdecked/twemoji/tree/b6b55fef1e8636b540a6d016a4729ca8cdf2e60b)（Twitter and contributors，图形 CC BY 4.0）。脚本同步获取许可证并生成来源说明，随安装包分发；含 emoji 的 PDF 保留署名。支持范围取决于固定字库及完整 emoji 序列，未支持字符会明确报错。
+字体、表情资源的准备、离线导出与许可证见[后端说明](server/README.md)。首次开发和正式构建会检查资源；也可手动执行 `npm run assets:prepare`。
 
 ## 检查与打包
 
 ```powershell
 npm run build
-backend/.venv/Scripts/python scripts/test-pdf-assets.py
-backend/.venv/Scripts/python scripts/prepare-pdf-assets.py
-backend/.venv/Scripts/python -m pytest backend/tests -q
-backend/.venv/Scripts/python scripts/test-platform.py
+npm run test:assets
+npm run test:backend
+npm run test:platform
 npm run test:ui
 npm run desktop:build
 ```
 
-工作台与 Agent 界面测试自行启动隔离服务；开场测试和显式联网照片检查使用 `npm run dev` 的页面，本机默认使用已安装的 Edge。Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
+界面测试自行启动隔离服务，无需预先运行开发服务器；本机默认使用已安装的 Edge，显式联网照片检查仍会访问 Wikimedia。Python 使用 PyInstaller 打包为 sidecar；每个操作系统与 CPU 架构在对应环境构建，不把 Windows 二进制复制进 macOS/Linux 安装包。发布端必须保存包签名私钥，客户端只内置公钥。
 
-业务回归使用带来源说明的固定测试照片，避免外部图片连接失败阻断存储和编辑测试。单独验证真实照片可设置 `STA_LIVE_PHOTOS=1` 并运行 `npx playwright test -g "真实 Wikimedia"`；这项检查失败会如实报错，不回退测试照片。
+业务回归使用带来源说明的固定测试照片，避免外部图片连接失败阻断存储和编辑测试。单独验证真实照片可设置 `STA_LIVE_PHOTOS=1` 并运行 `npm run test:ui -- --grep "真实 Wikimedia"`；这项检查失败会如实报错，不回退测试照片。
 
 ## 更新与发布
 
@@ -106,13 +94,19 @@ macOS 首批包采用 ad-hoc 签名，未进行 Apple 公证；首次启动可�
 
 ## 目录
 
+后端开发、资源与工具协议见[server/README.md](server/README.md)；客户端开发、测试照片署名与原生验收见[client/README.md](client/README.md)。
+
 | 目录 | 职责 |
 | --- | --- |
-| `src/` | React 工作台、API 与桌面桥接 |
-| `backend/` | Python 服务、JSON 存储与测试 |
-| `src-tauri/` | Rust 桌面生命周期、更新、用户数据目录 |
-| `scripts/` | 开发、sidecar 构建、发布清单与检查脚本 |
-| `deploy/shared-tools/` | 开发者运行的工具服务，本机为默认方式，也可选 HTTPS 部署 |
+| `client/src/` | React 工作台、API 与桌面桥接 |
+| `client/tests/` | 浏览器端到端测试、原生测试与夹具 |
+| `server/src/` | Python 服务与资源；逻辑包 `supertravel_server` 直接映射到此目录 |
+| `server/tests/` | 后端测试 |
+| `server/pyproject.toml`、`server/uv.lock` | Python 依赖声明和锁定版本 |
+| `server/.env.example` | 本机工具凭据模板 |
+| `client/src-tauri/` | Rust 桌面生命周期、更新、用户数据目录 |
+| `client/scripts/`、`server/scripts/` | 各端专用构建、资源准备与检查脚本 |
+| `scripts/` | 跨端启动、打包编排、版本与发布检查 |
 | `.github/workflows/` | 三平台构建和发布流水线 |
 | `.local/` | 仅本机的开发数据、密钥、临时工具；不入 Git |
 
