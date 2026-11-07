@@ -5,13 +5,12 @@ import os
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_MCP_URL", "AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"):
     os.environ.pop(name, None)
 
-from backend import agent_service, main
-from backend.model import ModelReply
-from backend.mcp_client import ToolError
+from supertravel_server import access, agent_service, conversations, main
+from supertravel_server.model import ModelReply
+from supertravel_server.mcp_client import ToolError
 
 
 def reply(content=None, name=None, arguments=None):
@@ -137,8 +136,8 @@ class FixtureTools:
 agent_service.ModelClient = FixtureModel
 original_create_app = main.create_app
 storage_errors = []
-original_replace = main.ConversationStore._atomic_replace
-original_mutate = main.ConversationStore.mutate
+original_replace = conversations.ConversationStore._atomic_replace
+original_mutate = conversations.ConversationStore.mutate
 
 
 def diagnosed_replace(path, payload):
@@ -152,7 +151,7 @@ def diagnosed_replace(path, payload):
 def diagnosed_mutate(store, identifier, change, **kwargs):
     try:
         return original_mutate(store, identifier, change, **kwargs)
-    except main.StoreError as error:
+    except conversations.StoreError as error:
         cause = error.__cause__
         storage_errors.append({"type": type(error).__name__, "code": error.detail["code"],
                                "cause": type(cause).__name__ if cause else None,
@@ -161,8 +160,8 @@ def diagnosed_mutate(store, identifier, change, **kwargs):
         raise
 
 
-main.ConversationStore._atomic_replace = staticmethod(diagnosed_replace)
-main.ConversationStore.mutate = diagnosed_mutate
+conversations.ConversationStore._atomic_replace = staticmethod(diagnosed_replace)
+conversations.ConversationStore.mutate = diagnosed_mutate
 
 
 def create_app(data_dir, token):
@@ -187,5 +186,5 @@ def create_app(data_dir, token):
 
 
 main.create_app = create_app
-main.ALLOWED_ORIGINS.append(os.environ["STA_TEST_FRONTEND_ORIGIN"])
+access.ALLOWED_ORIGINS.append(os.environ["STA_TEST_FRONTEND_ORIGIN"])
 raise SystemExit(main.main())

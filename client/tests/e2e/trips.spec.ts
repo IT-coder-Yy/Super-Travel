@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { test, expect } from './fixtures/local-app';
+import { test, expect } from '../fixtures/local-app';
 
 test.use({ reducedMotion: 'reduce' });
 

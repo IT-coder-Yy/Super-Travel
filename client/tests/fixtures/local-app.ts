@@ -4,7 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 
 export type LocalApp = {
@@ -30,19 +31,19 @@ async function exited(child: ChildProcess): Promise<void> {
 
 export const test = base.extend<{}, { localApp: LocalApp }>({
   localApp: [async ({}, use) => {
-    const root = process.cwd();
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
     await mkdir(resolve(root, '.local'), { recursive: true });
     const dataDir = await mkdtemp(resolve(root, '.local/ui-fixture-'));
     const [apiPort, webPort] = await Promise.all([freePort(), freePort()]);
     const url = `http://127.0.0.1:${webPort}`;
     const apiBase = `http://127.0.0.1:${apiPort}`;
     const token = randomBytes(24).toString('hex');
-    const localPython = resolve(root, 'backend/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const localPython = resolve(root, 'server/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
     const python = process.env.STA_PYTHON || (existsSync(localPython) ? localPython : 'python');
     let backend: ChildProcess;
     let vite: ChildProcess | undefined;
     async function startBackend() {
-      backend = spawn(python, ['tests/fixtures/agent-backend.py', '--port', String(apiPort), '--data-dir', dataDir], {
+      backend = spawn(python, ['client/tests/fixtures/agent-backend.py', '--port', String(apiPort), '--data-dir', dataDir], {
         cwd: root, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, STA_BACKEND_TOKEN: token, STA_TEST_FRONTEND_ORIGIN: url, PYTHONUNBUFFERED: '1' },
       });
@@ -67,8 +68,8 @@ export const test = base.extend<{}, { localApp: LocalApp }>({
     };
     try {
       await startBackend();
-      vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], {
-        cwd: root, windowsHide: true, stdio: 'ignore',
+      vite = spawn(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], {
+        cwd: resolve(root, 'client'), windowsHide: true, stdio: 'ignore',
         env: { ...process.env, VITE_API_BASE: apiBase, VITE_API_TOKEN: token, VITE_DATA_DIR: dataDir },
       });
       let available = false;

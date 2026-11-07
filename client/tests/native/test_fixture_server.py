@@ -13,11 +13,11 @@ import httpx
 import pytest
 
 import fixture_server as fixture
-from backend.agents import AgentSession, ROUTE_TOOL, Route
-from backend.mcp_client import ToolError
-from backend.model import ModelClient, ModelConfig, ModelReply
-from backend.shared_tools import SharedTools
-from backend.trips import TripResearch
+from supertravel_server.agents import AgentSession, ROUTE_TOOL, Route
+from supertravel_server.mcp_client import ToolError
+from supertravel_server.model import ModelClient, ModelConfig, ModelReply
+from supertravel_server.shared_tools import SharedTools
+from supertravel_server.trips import TripResearch
 
 
 @pytest.fixture(scope="module")

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures/local-app';
+import { test, expect } from '../fixtures/local-app';
 import { fileURLToPath } from 'node:url';
-import { createExample } from '../src/types';
+import { createExample } from '../../src/types';
 
 test('新会话保持空白，等待用户生成行程而非沿用示例', async ({ page, localApp }, info) => {
   await localApp.reset();
@@ -48,8 +48,8 @@ async function captureLoadedWorkspace(page: Page, path: string) {
 test.describe('本地业务回归（固定图片）', () => {
   test.beforeEach(async ({ page, localApp }, testInfo) => {
     await localApp.reset();
-    await page.route('https://thumb.wikimedia.org/**/960px-Sunset_over_the_Zigzag_Bridge*.jpg', route => route.fulfill({ path: fileURLToPath(new URL('./fixtures/west-lake-sunset.jpg', import.meta.url)), contentType: 'image/jpeg' }));
-    await page.route('https://thumb.wikimedia.org/**/500px-West_lake_twilight.jpg', route => route.fulfill({ path: fileURLToPath(new URL('./fixtures/west-lake-twilight.jpg', import.meta.url)), contentType: 'image/jpeg' }));
+    await page.route('https://thumb.wikimedia.org/**/960px-Sunset_over_the_Zigzag_Bridge*.jpg', route => route.fulfill({ path: fileURLToPath(new URL('../fixtures/west-lake-sunset.jpg', import.meta.url)), contentType: 'image/jpeg' }));
+    await page.route('https://thumb.wikimedia.org/**/500px-West_lake_twilight.jpg', route => route.fulfill({ path: fileURLToPath(new URL('../fixtures/west-lake-twilight.jpg', import.meta.url)), contentType: 'image/jpeg' }));
     await page.goto('/');
     await expect(page.getByRole('button', { name: '保存行程', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: '旅程', exact: true }).click();

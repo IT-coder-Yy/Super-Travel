@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect, type LocalApp } from './fixtures/local-app';
+import { test, expect, type LocalApp } from '../fixtures/local-app';
 
 test.use({ reducedMotion: 'reduce' });
 async function createTrip(page: Page, localApp: LocalApp) {

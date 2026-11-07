@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { test, expect } from './fixtures/local-app';
+import { test, expect } from '../fixtures/local-app';
 
 test.describe('工具服务地址设置（真实本地配置 API，无外部查询）', () => {
   test.use({ reducedMotion: 'reduce' });

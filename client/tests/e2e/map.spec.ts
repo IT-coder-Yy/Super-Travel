@@ -1,5 +1,5 @@
-import { test, expect } from './fixtures/local-app'
-import { createExample } from '../src/types'
+import { test, expect } from '../fixtures/local-app'
+import { createExample } from '../../src/types'
 
 // Explicit front-end fixture: no writes, real POI claims or external tile traffic.
 const fixture = {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from '../fixtures/local-app'
 
 test('开场三秒后开放真实工作区，遮罩期间键盘不会进入底层', async ({ page }) => {
   const errors: string[] = []

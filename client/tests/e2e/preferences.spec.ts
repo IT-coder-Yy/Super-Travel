@@ -1,7 +1,7 @@
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures/local-app';
+import { test, expect } from '../fixtures/local-app';
 
 const defaults = { schema: 1, enabled: false, budgetAmountFen: null, pace: null, dietaryNotes: '', companionMode: null };
 const chosen = { ...defaults, enabled: true, budgetAmountFen: 300000, pace: 'relaxed', dietaryNotes: '清淡，不吃辣', companionMode: 'family' };
