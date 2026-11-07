@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { isTauri } from '@tauri-apps/api/core'
+import { useConversations } from './hooks/useConversations'
+import { Dialog } from './components/Dialog'
+import { Photo, PHOTO, PHOTO_TWO } from './components/Photo'
+import { useAppUpdate } from './hooks/useAppUpdate'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Download, FolderOpen, BookmarkPlus, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react'
-import { ApiError, exportTrip, addTripCandidate, deleteTripCandidate, discardTripDraft, insertTripCandidate, parkTripActivity, applyTripDraft, cancelAgent, createConversation, deleteTripActivity, listConversations, listRecoveryOptions, moveTripActivity, readConversation, recoverConversation, resolveTripPlace, restorePreviousTrip, saveConversation, selectTripPlace, sendAgentMessage } from './api'
-import { cancelUpdate, checkForUpdate, chooseDataDirectory, getAppVersion, getBackendConnection, installUpdate, onBeforeClose, type UpdateCheck, type UpdatePhase } from './desktop'
+import { ApiError, exportTrip, addTripCandidate, deleteTripCandidate, discardTripDraft, insertTripCandidate, parkTripActivity, applyTripDraft, cancelAgent, createConversation, deleteTripActivity, listConversations, moveTripActivity, readConversation, resolveTripPlace, restorePreviousTrip, selectTripPlace, sendAgentMessage } from './api'
+import { cancelUpdate, chooseDataDirectory, getAppVersion, onBeforeClose } from './desktop'
 import { MapCanvas } from './components/MapCanvas'
 import { RealMap } from './components/RealMap'
 import { TripLeg } from './components/TripLeg'
@@ -15,57 +18,30 @@ import { clearInvalidRoutes, formatCost, knownCosts, routeDetails, tripOverview 
 import { ModelSettings } from './components/ModelSettings'
 import { TravelPreferences } from './components/TravelPreferences'
 import appIcon from './assets/app-icon.svg'
-import { beginTripDraft, currentCandidates, hasTripDraft, createWorkspace, isWorkspaceData, type Activity, type ActivityMove, type Candidate, type ConversationSummary, type PlaceSelection, type RecoveryOption, type TripExportFormat, type WorkspaceData } from './types'
+import { beginTripDraft, currentCandidates, hasTripDraft, createWorkspace, isWorkspaceData, type Activity, type ActivityMove, type Candidate, type ConversationSummary, type PlaceSelection, type TripExportFormat } from './types'
 
-const PHOTO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/d/dc/Sunset_over_the_Zigzag_Bridge%2C_West_Lake%2C_Hangzhou_20090909_1.jpg/960px-Sunset_over_the_Zigzag_Bridge%2C_West_Lake%2C_Hangzhou_20090909_1.jpg'
-const PHOTO_TWO = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6e/West_lake_twilight.jpg/500px-West_lake_twilight.jpg'
 type Panel = 'history' | 'settings' | 'photos' | 'favorites' | 'candidates' | 'edit' | 'new' | 'detail' | 'export' | null
 type PlacePickerState = { candidate?: boolean; conversation: ConversationSummary; day: number; activity?: Activity; initialTime: string }
 type CandidateActionState = { kind: 'insert' | 'delete'; conversation: ConversationSummary; candidate: Candidate }
 type ActivityActionState = { kind: 'move' | 'delete'; conversation: ConversationSummary; activity: Activity }
 const activityMinutes = (activity: Activity) => Number(activity.duration.match(/^约 (\d+) 分钟$/)?.[1] ?? 60)
 const describeError = (error: unknown) => error instanceof Error ? error.message : '操作没有完成，请重试。'
-let startupUpdateCheck: Promise<UpdateCheck> | null = null
-
-function Photo({ src = PHOTO, className = '', alt = '杭州西湖风景参考照片' }: { src?: string; className?: string; alt?: string }) {
-  const [failed, setFailed] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  return <div className={`photo ${loaded ? 'photo--loaded' : ''} ${className}`} aria-busy={!loaded && !failed}>
-    {!failed && <img src={src} alt={alt} referrerPolicy="no-referrer" onLoad={event => { void event.currentTarget.decode().then(() => setLoaded(true)).catch(() => setFailed(true)) }} onError={() => setFailed(true)} />}
-    {!loaded && !failed && <div className="photo-loading"><ImageIcon size={20} /><span>照片加载中</span></div>}
-    {failed && <div className="photo-fallback"><MapPin size={24} /><span>西湖 · 山水之间</span></div>}
-  </div>
-}
-
-function Dialog({ title, children, onClose, wide = false, busy = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean; busy?: boolean }) {
-  const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => { const dialog = ref.current; dialog?.showModal(); return () => { if (dialog?.open) dialog.close() } }, [])
-  return <dialog ref={ref} aria-label={title} className={`dialog ${wide ? 'dialog--wide' : ''}`} onCancel={event => { event.preventDefault(); if (!busy) onClose() }} onClick={event => { if (!busy && event.target === event.currentTarget) onClose() }}>
-    <div className="dialog-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} disabled={busy} aria-label="关闭窗口"><X size={21} /></button></div>
-    {children}
-  </dialog>
-}
 
 export default function App() {
-  const [workspace, setWorkspace] = useState<WorkspaceData>(createWorkspace)
-  const dataRef = useRef(workspace)
-  const currentRef = useRef<ConversationSummary | null>(null)
-  const queueRef = useRef<Promise<unknown>>(Promise.resolve())
-  const dirtyRef = useRef(false)
+  const [panel, setPanel] = useState<Panel>(null)
+  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
+  function notify(message: string, error = false) { setToast({ message, error }) }
+  const {
+    workspace, dataRef, currentRef, queueRef, dirtyRef,
+    current, history, setHistory, recoveryOptions, scanning, recovering,
+    ready, loading, dirty, saving, dataDir, connectionError,
+    change, setDocument, persist, connect, scanRecovery, restoreConversation
+  } = useConversations(notify, () => setPanel(null))
   const closeSaveRef = useRef<() => Promise<void>>(async () => undefined)
   const placeFlowRef = useRef(false)
   const placeFocusRef = useRef<string | null>(null)
   const placeSaveRef = useRef<Promise<void> | null>(null)
-  const [current, setCurrent] = useState<ConversationSummary | null>(null)
-  const [history, setHistory] = useState<ConversationSummary[]>([])
-  const [recoveryOptions, setRecoveryOptions] = useState<RecoveryOption[]>([])
-  const [scanning, setScanning] = useState(false)
-  const [recovering, setRecovering] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [dirty, setDirty] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [applying, setApplying] = useState(false)
   const [exportSaving, setExportSaving] = useState(false)
   const [locating, setLocating] = useState<string | null>(null)
@@ -77,10 +53,7 @@ export default function App() {
   const [placeSaving, setPlaceSaving] = useState(false)
   const [placeError, setPlaceError] = useState('')
   const [timeInputs, setTimeInputs] = useState<Record<string, string>>({})
-  const [connectionError, setConnectionError] = useState('')
-  const [dataDir, setDataDir] = useState('连接后显示本地数据目录')
   const [version, setVersion] = useState('0.1.0')
-  const [panel, setPanel] = useState<Panel>(null)
   const [selected, setSelected] = useState('bridge')
   const [zoom, setZoom] = useState(1)
   const [mapReset, setMapReset] = useState(0)
@@ -88,12 +61,7 @@ export default function App() {
   const [chatOpen, setChatOpen] = useState(false)
   const [input, setInput] = useState('')
   const [newTitle, setNewTitle] = useState('我的新旅程')
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
-  const [update, setUpdate] = useState<UpdateCheck | null>(null)
-  const [checking, setChecking] = useState(false)
-  const [installing, setInstalling] = useState(false)
-  const [progress, setProgress] = useState<number | null>(null)
-  const [updatePhase, setUpdatePhase] = useState<UpdatePhase>('downloading')
+  const { update, checking, installing, progress, updatePhase, checkUpdate, runUpdate } = useAppUpdate(persist, notify)
   const chatEnd = useRef<HTMLDivElement>(null)
   const hasDraft = hasTripDraft(workspace)
   const canExport = !!workspace.trip && workspace.days.length > 0
@@ -112,30 +80,7 @@ export default function App() {
   const costSummary = knownCosts(days)
   const routeConflict = trip ? days.flatMap(item => item.activities.map((activity, index) => routeDetails(item.activities[index - 1], activity, trip.transportMode ?? 'walking')?.conflict)).find(Boolean) : undefined
 
-  function notify(message: string, error = false) { setToast({ message, error }) }
   function resetMap() { setZoom(1); setMapReset(value => value + 1) }
-  function change(next: WorkspaceData, isDirty = true) {
-    const nextDays = next.draft ?? next.days
-    if (next.selectedDay !== 0 && !nextDays.some(item => item.day === next.selectedDay)) next = { ...next, selectedDay: nextDays[0]?.day ?? 1 }
-    dataRef.current = next; dirtyRef.current = isDirty; setWorkspace(next); setDirty(isDirty)
-  }
-  function setDocument(document: ConversationSummary | null) { currentRef.current = document; setCurrent(document) }
-
-  async function writeWorkspace(next: WorkspaceData): Promise<void> {
-    const document = currentRef.current ? await saveConversation(currentRef.current, next) : await createConversation(next.trip ? `${next.trip.destination}之旅` : '我的新旅程', next)
-    setDocument(document)
-    if (dataRef.current === next) { dirtyRef.current = false; setDirty(false) }
-    setHistory(items => [document, ...items.filter(item => item.id !== document.id)])
-  }
-
-  async function persist(next: WorkspaceData = dataRef.current): Promise<void> {
-    if (!ready) throw new Error('本地服务尚未连接，当前修改还没有保存。请在设置中重新连接。')
-    setSaving(true)
-    const operation = queueRef.current.catch(() => undefined).then(() => writeWorkspace(next))
-    queueRef.current = operation
-    try { await operation } finally { if (queueRef.current === operation) setSaving(false) }
-  }
-
   closeSaveRef.current = async () => {
     if (placeSaveRef.current) await placeSaveRef.current
     await queueRef.current.catch(() => undefined)
@@ -152,30 +97,7 @@ export default function App() {
     return () => { disposed = true; cleanup() }
   }, [])
 
-  async function connect() {
-    setLoading(true); setConnectionError('')
-    try {
-      const connection = await getBackendConnection()
-      const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
-      setRecoveryOptions(damaged)
-      setDataDir(connection.dataDir); setHistory(items); setReady(true)
-      if (!currentRef.current && !dirty && items.length > 0) {
-        const latest = await readConversation(items[0]!.id)
-        if (!isWorkspaceData(latest.data)) throw new Error('本地会话格式不兼容，原文件已保留。请创建新会话或恢复备份。')
-        setDocument(latest); change(latest.data, false)
-      }
-    } catch (error) { setReady(false); setConnectionError(describeError(error)) }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { void connect(); void getAppVersion().then(setVersion).catch(() => undefined) }, [])
-  useEffect(() => {
-    if (!isTauri()) return
-    let disposed = false
-    startupUpdateCheck ??= checkForUpdate()
-    void startupUpdateCheck.then(result => { if (!disposed) setUpdate(result) }).catch(() => undefined)
-    return () => { disposed = true }
-  }, [])
+  useEffect(() => { void getAppVersion().then(setVersion).catch(() => undefined) }, [])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 6500); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [workspace.messages.length, chatOpen])
   useEffect(() => {
@@ -574,47 +496,12 @@ export default function App() {
       if (currentRef.current?.id === identifier && isWorkspaceData(document.data)) { setDocument(document); change(document.data, false) }
     } catch (error) { notify(describeError(error), true) }
   }
-  async function checkUpdate() {
-    setChecking(true); setUpdate(null)
-    try { setUpdate(await checkForUpdate()) } catch (error) { notify(describeError(error), true) }
-    finally { setChecking(false) }
-  }
-  async function runUpdate() {
-    setInstalling(true); setProgress(null); setUpdatePhase('downloading')
-    try { await persist(); await installUpdate((percent, phase) => { setProgress(percent); setUpdatePhase(phase) }) } catch (error) { notify(describeError(error), true); setInstalling(false) }
-  }
   async function selectDataDirectory() {
     try {
       if (dirty) await persist()
       const path = await chooseDataDirectory()
       if (path) notify(`已选择 ${path}。下次启动使用新目录，现有文件不会自动迁移。`)
     } catch (error) { notify(describeError(error), true) }
-  }
-  async function scanRecovery() {
-    setScanning(true)
-    try {
-      const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
-      setHistory(items); setRecoveryOptions(damaged)
-    } catch (error) { notify(describeError(error), true) }
-    finally { setScanning(false) }
-  }
-  async function restoreConversation(option: RecoveryOption) {
-    if (!option.token) return
-    setRecovering(option.id)
-    try {
-      const operation = queueRef.current.catch(() => undefined).then(async () => {
-        if (currentRef.current?.id !== option.id && dirtyRef.current) await writeWorkspace(dataRef.current)
-        const document = await recoverConversation(option.id, option.token!)
-        if (!isWorkspaceData(document.data)) throw new Error('备份已恢复，但内容与当前界面不兼容。损坏原件已另存保留。')
-        setDocument(document); change(document.data, false)
-      })
-      queueRef.current = operation
-      await operation
-      await scanRecovery()
-      setPanel(null)
-      notify('会话已从备份恢复。损坏原件保留在数据目录的 recovered-originals 文件夹。')
-    } catch (error) { notify(describeError(error), true); await scanRecovery() }
-    finally { setRecovering(null) }
   }
   function favorite(id: string) { if (applying || locating || placeFlowRef.current) return; if (agentWorking) { notify('请等待任务结束或先取消任务，再修改收藏。'); return } change({ ...dataRef.current, favorites: dataRef.current.favorites.includes(id) ? dataRef.current.favorites.filter(item => item !== id) : [...dataRef.current.favorites, id] }) }
 
