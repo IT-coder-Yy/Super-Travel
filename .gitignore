@@ -1,12 +1,14 @@
 node_modules/
 dist/
-src-tauri/target/
-src-tauri/gen/
-src-tauri/binaries/*
-!src-tauri/binaries/.gitkeep
-backend/.venv/
-backend/build/
-backend/dist/
+client/src-tauri/target/
+client/src-tauri/gen/
+client/src-tauri/binaries/*
+!client/src-tauri/binaries/.gitkeep
+server/.venv/
+server/src/*.egg-info/
+server/*.egg-info/
+server/build/
+server/dist/
 **/__pycache__/
 .pytest_cache/
 .local/
@@ -20,7 +22,7 @@ artifacts/
 tools-service/
 
 # Generated PDF resources and local development records.
-/backend/assets/
+/server/src/assets/
 /DESIGN.md
 /PRODUCT.md
 /scripts/UPDATE-REHEARSAL.md
@@ -28,3 +30,7 @@ tools-service/
 !/docs/README.md
 !/docs/RELEASE_NOTES.md
 !/docs/preview.png
+
+# Pre-migration local environments and test caches.
+/backend/
+/src-tauri/
