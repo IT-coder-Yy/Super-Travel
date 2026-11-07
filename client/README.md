@@ -34,6 +34,19 @@ npm run desktop:build
 
 Playwright 自行启动隔离后端和 Vite，无须预先启动开发服务器；本机默认使用已安装的 Edge。开场页也使用同一夹具。正式更新、签名和发布流程见[根说明](../README.md)。
 
+后续 Release 的资产文件名如下，`<版本>` 由发布版本号替换；已发布的 v0.1.3 及更早资产保持原名。
+
+| 平台与用途 | 文件名 |
+|---|---|
+| Windows x64 安装与更新 | `SuperTravel_<版本>_x64-setup.exe` |
+| Linux x64 安装与更新 | `SuperTravel_<版本>_amd64.AppImage` |
+| macOS Apple Silicon 安装 | `SuperTravel_<版本>_aarch64.dmg` |
+| macOS Intel 安装 | `SuperTravel_<版本>_x64.dmg` |
+| macOS Apple Silicon 自动更新 | `SuperTravel_<版本>_aarch64-apple-darwin.app.tar.gz` |
+| macOS Intel 自动更新 | `SuperTravel_<版本>_x86_64-apple-darwin.app.tar.gz` |
+
+每个更新包保留同名 `.sig` 文件，`latest.json` 的下载 URL 与 `SHA256SUMS.txt` 同步使用新文件名；更新清单中的平台标识保持不变，以兼容已安装客户端。
+
 ## 界面测试照片
 
 以下 JPEG 是 2026-10-26 从应用实际使用的 Wikimedia 缩略图响应缓存的原始字节，未再次编辑。只由 Playwright 业务测试返回，不进入生产应用；生产仍请求远程图片。

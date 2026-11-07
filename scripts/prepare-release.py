@@ -11,11 +11,12 @@ import shutil
 from urllib.parse import quote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
+# Existing clients use these platform keys; public filenames use a separate suffix.
 TARGETS = {
-    "x86_64-pc-windows-msvc": ("windows-x86_64-nsis", "nsis", "*.exe", ".exe"),
-    "aarch64-apple-darwin": ("darwin-aarch64-app", "macos", "*.app.tar.gz", ".app.tar.gz"),
-    "x86_64-apple-darwin": ("darwin-x86_64-app", "macos", "*.app.tar.gz", ".app.tar.gz"),
-    "x86_64-unknown-linux-gnu": ("linux-x86_64-appimage", "appimage", "*.AppImage", ".AppImage"),
+    "x86_64-pc-windows-msvc": ("windows-x86_64-nsis", "nsis", "*.exe", ".exe", "x64-setup"),
+    "aarch64-apple-darwin": ("darwin-aarch64-app", "macos", "*.app.tar.gz", ".app.tar.gz", "aarch64-apple-darwin"),
+    "x86_64-apple-darwin": ("darwin-x86_64-app", "macos", "*.app.tar.gz", ".app.tar.gz", "x86_64-apple-darwin"),
+    "x86_64-unknown-linux-gnu": ("linux-x86_64-appimage", "appimage", "*.AppImage", ".AppImage", "amd64"),
 }
 SEMVER = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\Z")
 
@@ -42,7 +43,7 @@ def safe_base_url(value: str) -> str:
 
 def collect(bundle: Path, target: str, version: str, base_url: str, output: Path) -> dict:
     if not SEMVER.fullmatch(version): raise ValueError("Release requires stable SemVer")
-    key, folder, pattern, extension = TARGETS[target]
+    key, folder, pattern, extension, asset_suffix = TARGETS[target]
     base_url = safe_base_url(base_url)
     matches = list((bundle / folder).glob(pattern))
     if len(matches) != 1: raise ValueError(f"Expected one {target} update artifact, found {len(matches)}")
@@ -50,14 +51,15 @@ def collect(bundle: Path, target: str, version: str, base_url: str, output: Path
     signature_file = Path(str(asset) + ".sig")
     signature = signature_text(signature_file.read_text(encoding="utf-8").strip(), version)
     output.mkdir(parents=True, exist_ok=True)
-    name = f"SuperTravel_{version}_{key}{extension}"
+    name = f"SuperTravel_{version}_{asset_suffix}{extension}"
     shutil.copy2(asset, output / name)
     (output / f"{name}.sig").write_text(signature + "\n", encoding="utf-8")
     files = [{"name": name, "sha256": digest(output / name)}, {"name": f"{name}.sig", "sha256": digest(output / f"{name}.sig")}]
     if "apple-darwin" in target:
         dmgs = list((bundle / "dmg").glob("*.dmg"))
         if len(dmgs) != 1: raise ValueError(f"Expected one macOS DMG, found {len(dmgs)}")
-        dmg_name = f"SuperTravel_{version}_{key}.dmg"
+        dmg_arch = "aarch64" if target == "aarch64-apple-darwin" else "x64"
+        dmg_name = f"SuperTravel_{version}_{dmg_arch}.dmg"
         shutil.copy2(dmgs[0], output / dmg_name)
         files.append({"name": dmg_name, "sha256": digest(output / dmg_name)})
     manifest = {"version": version, "platform": key, "url": f"{base_url}/{quote(name)}", "signature": signature, "files": files}

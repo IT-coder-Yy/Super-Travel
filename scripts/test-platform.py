@@ -60,7 +60,7 @@ class ReleaseTests(unittest.TestCase):
                 opened.assert_not_called()
 
     def make_part(self,root,target,version="0.1.0"):
-        _,folder,_,extension=release.TARGETS[target]
+        _,folder,_,extension,_=release.TARGETS[target]
         bundle=root/target/"bundle"
         (bundle/folder).mkdir(parents=True)
         asset=bundle/folder/("app"+extension)
@@ -89,6 +89,41 @@ class ReleaseTests(unittest.TestCase):
             metadata=json.loads((first/"platform.json").read_text())
             (first/metadata["files"][0]["name"]).write_bytes(b"tampered")
             with self.assertRaises(ValueError): release.merge(root/"collected",root/"bad-release")
+
+    def test_release_names_match_update_urls_signatures_and_checksums(self):
+        expected = {
+            "x86_64-pc-windows-msvc": ("windows-x86_64-nsis", "SuperTravel_0.1.4_x64-setup.exe", None),
+            "aarch64-apple-darwin": ("darwin-aarch64-app", "SuperTravel_0.1.4_aarch64-apple-darwin.app.tar.gz", "SuperTravel_0.1.4_aarch64.dmg"),
+            "x86_64-apple-darwin": ("darwin-x86_64-app", "SuperTravel_0.1.4_x86_64-apple-darwin.app.tar.gz", "SuperTravel_0.1.4_x64.dmg"),
+            "x86_64-unknown-linux-gnu": ("linux-x86_64-appimage", "SuperTravel_0.1.4_amd64.AppImage", None),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            filenames = set()
+            expected_platforms = {}
+            for target, (platform, name, dmg) in expected.items():
+                with self.subTest(target=target):
+                    part = self.make_part(root, target, "0.1.4")
+                    metadata = json.loads((part / "platform.json").read_text(encoding="utf-8"))
+                    names = {name, name + ".sig"} | ({dmg} if dmg else set())
+                    self.assertEqual(metadata["platform"], platform)
+                    self.assertEqual({item["name"] for item in metadata["files"]}, names)
+                    self.assertEqual((part / name).read_bytes(), b"signed artifact fixture")
+                    self.assertEqual((part / (name + ".sig")).read_text(encoding="utf-8"), signature("0.1.4") + "\n")
+                    if dmg:
+                        self.assertEqual((part / dmg).read_bytes(), b"installer fixture")
+                    filenames.update(names)
+                    expected_platforms[platform] = {
+                        "signature": signature("0.1.4"),
+                        "url": "https://github.com/example/app/releases/download/v0.1.4/" + name,
+                    }
+            output = root / "release"
+            release.merge(root / "collected", output)
+            manifest = json.loads((output / "latest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["platforms"], expected_platforms)
+            self.assertEqual({path.name for path in output.iterdir()}, filenames | {"latest.json", "SHA256SUMS.txt"})
+            checksums = (output / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(checksums, sorted(f"{release.digest(output / name)}  {name}" for name in filenames))
 
     def test_metadata_refuses_path_traversal(self):
         with tempfile.TemporaryDirectory() as temp:
