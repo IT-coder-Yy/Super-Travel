@@ -13,11 +13,10 @@ import tempfile
 import time
 from uuid import UUID, uuid4
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
 
 from fastapi.testclient import TestClient
-from backend.main import create_app
+from supertravel_server.app import create_app
 
 
 def main():

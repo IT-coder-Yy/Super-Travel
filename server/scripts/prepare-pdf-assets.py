@@ -12,7 +12,7 @@ import tempfile
 from urllib.request import urlopen
 import zipfile
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 FONTTOOLS_VERSION = "4.68.0"
 GOOGLE_REV = "6c1dbe27dcf7d817d4b62cec033ba77fa8e2a5ec"
 TWEMOJI_REV = "b6b55fef1e8636b540a6d016a4729ca8cdf2e60b"
@@ -126,7 +126,7 @@ def prepare_fonts(output: Path, cache: Path) -> None:
         from fontTools.ttLib import TTFont
         from fontTools.varLib.instancer import instantiateVariableFont
         if fontTools.__version__ != FONTTOOLS_VERSION:
-            raise RuntimeError(f"Install backend/requirements-dev.txt (fonttools=={FONTTOOLS_VERSION}) before preparing fonts")
+            raise RuntimeError(f"Run uv sync --project server --locked (fonttools=={FONTTOOLS_VERSION}) before preparing fonts")
         with tempfile.TemporaryDirectory(dir=cache) as directory:
             temporary = Path(directory)
             if not matches(fonts / "NotoSansSC-Regular.ttf", FONT_HASHES["NotoSansSC-Regular.ttf"]):
@@ -202,13 +202,13 @@ def prepare(output: Path, cache: Path) -> list[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "backend/assets")
+    parser.add_argument("--output", type=Path, default=ROOT / "server/src/assets")
     parser.add_argument("--cache", type=Path, default=ROOT / ".local/pdf-assets")
     args = parser.parse_args()
     try:
         prepare(args.output, args.cache)
     except (OSError, ValueError, RuntimeError, ImportError, tarfile.TarError, zipfile.BadZipFile) as error:
-        print(f"PDF resources unavailable: {error}\nRetry: python scripts/prepare-pdf-assets.py", file=sys.stderr)
+        print(f"PDF resources unavailable: {error}\nRetry: python server/scripts/prepare-pdf-assets.py", file=sys.stderr)
         return 1
     print("PDF assets verified: 4 fonts, 4009 emoji images and notices; ready for offline export.")
     return 0

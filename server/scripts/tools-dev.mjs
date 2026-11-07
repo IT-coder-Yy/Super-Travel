@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseEnv } from 'node:util';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const keyNames = ['AMAP_MAPS_API_KEY', 'BAIDU_MAP_API_KEY', 'TAVILY_API_KEY', 'SERPER_API_KEY'];
 
 export function toolEnvironment(env, file = {}) {
@@ -26,9 +26,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     const env = toolEnvironment(process.env, file);
     if (!keyNames.some(name => env[name])) throw new Error('请通过 STA_DEV_ENV_FILE 或环境变量配置工具服务密钥。');
     const port = toolPort(process.env.STA_TOOLS_PORT);
-    const venv = resolve(root, 'backend/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+    const venv = resolve(root, 'server/.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
     const child = spawn(process.env.STA_PYTHON || (existsSync(venv) ? venv : 'python'), [
-      '-m', 'uvicorn', 'backend.shared_tools_server:create_app', '--factory', '--host', '127.0.0.1', '--port', port,
+      '-m', 'uvicorn', 'supertravel_server.shared_tools_server:create_app', '--factory', '--host', '127.0.0.1', '--port', port,
       '--workers', '1', '--limit-concurrency', '32', '--no-access-log', '--no-proxy-headers',
     ], { cwd: root, env, stdio: 'inherit', windowsHide: true });
     console.log(`工具服务地址：http://127.0.0.1:${port}；密钥仅供本机工具服务使用。`);

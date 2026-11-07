@@ -3,6 +3,7 @@ from contextlib import ExitStack
 from io import BytesIO
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
 import tarfile
 import tempfile
@@ -122,7 +123,32 @@ class AssetsTests(unittest.TestCase):
             with patch("sys.argv", ["build-sidecar.py", "--allow-missing-pdf-assets"]):
                 builder.main()
             self.assertNotIn("--add-data", freeze.call_args.args[0])
-            self.assertEqual((self.root / "src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe").read_bytes(), b"test sidecar")
+            self.assertEqual((self.root / "client/src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe").read_bytes(), b"test sidecar")
+
+    def test_freeze_resolves_flat_source_package_and_bundles_resources(self):
+        spec = importlib.util.spec_from_file_location("sidecar", Path(__file__).with_name("build-sidecar.py"))
+        builder = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        source = self.root / "server/src"
+        source.mkdir(parents=True)
+        for name in ("__init__.py", "main.py", "app.py"):
+            (source / name).write_text(f"# {name}")
+        font = source / "assets/fonts/font.ttf"
+        font.parent.mkdir(parents=True)
+        font.write_bytes(b"font")
+        staged = []
+        def freeze(command, **kwargs):
+            package_root = Path(command[command.index("--paths") + 1])
+            staged.append(package_root)
+            self.assertEqual((package_root / "supertravel_server/app.py").read_text(), "# app.py")
+            self.assertEqual(Path(command[-1]), package_root / "supertravel_server/main.py")
+            self.assertIn(f"{font}{os.pathsep}supertravel_server/assets/fonts", command)
+            self.assertEqual(kwargs["cwd"], self.root)
+        with patch.object(builder, "ROOT", self.root), patch.object(builder.subprocess, "run", side_effect=freeze):
+            builder.freeze(self.root / "build", [font], self.root / "dist")
+        self.assertEqual(len(staged), 1)
+        self.assertFalse(staged[0].exists())
+        self.assertTrue((source / "app.py").exists())
 
     def test_ready_assets_work_offline_and_bundle_excludes_local_reports(self):
         output = self.root / "assets"
