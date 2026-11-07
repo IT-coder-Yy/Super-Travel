@@ -19,7 +19,7 @@ def signature(version="0.1.0"):
 
 class ReleaseTests(unittest.TestCase):
     def test_native_upgrade_fixture_detects_changed_data(self):
-        spec = importlib.util.spec_from_file_location("native_upgrade", Path(__file__).with_name("smoke-native-update.py"))
+        spec = importlib.util.spec_from_file_location("native_upgrade", ROOT / "client/scripts/smoke-native-update.py")
         upgrade = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(upgrade)
         with tempfile.TemporaryDirectory() as temporary:
@@ -38,7 +38,7 @@ class ReleaseTests(unittest.TestCase):
     def test_old_manifest_uses_current_release_after_repository_rename(self):
         import io
         from unittest.mock import patch
-        spec = importlib.util.spec_from_file_location("native_upgrade", Path(__file__).with_name("smoke-native-update.py"))
+        spec = importlib.util.spec_from_file_location("native_upgrade", ROOT / "client/scripts/smoke-native-update.py")
         upgrade = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(upgrade)
         prefix = "https://github.com/owner/current/releases/download/v0.1.2"
@@ -111,6 +111,6 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(manifest["notes"], (ROOT / "docs/RELEASE_NOTES.md").read_text(encoding="utf-8").strip())
 
 if __name__=="__main__":
-    subprocess.run(["node","--test","scripts/configure-updater.test.mjs","scripts/configure-tools.test.mjs","scripts/tools-dev.test.mjs"],cwd=ROOT,check=True)
-    subprocess.run([sys.executable,"scripts/test-windows-update.py"],cwd=ROOT,check=True)
+    subprocess.run(["node","--test","client/scripts/configure-updater.test.mjs","client/scripts/configure-tools.test.mjs","server/scripts/tools-dev.test.mjs"],cwd=ROOT,check=True)
+    subprocess.run([sys.executable,"client/scripts/test-windows-update.py"],cwd=ROOT,check=True)
     unittest.main()

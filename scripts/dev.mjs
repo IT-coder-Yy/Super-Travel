@@ -8,9 +8,9 @@ import { parseEnv } from 'node:util';
 import { readFileSync } from 'node:fs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const localPython = resolve(root, 'backend', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+const localPython = resolve(root, 'server', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 const python = process.env.STA_PYTHON || (existsSync(localPython) ? localPython : 'python');
-const assets = spawnSync(python, [resolve(root, 'scripts/prepare-pdf-assets.py')], { cwd: root, stdio: 'inherit', windowsHide: true });
+const assets = spawnSync(python, [resolve(root, 'server/scripts/prepare-pdf-assets.py')], { cwd: root, stdio: 'inherit', windowsHide: true });
 if (assets.error || assets.status !== 0) console.warn('PDF 资源尚未准备完成；其他功能可继续使用。联网后运行资源准备脚本并重启开发服务，再重试 PDF 导出。');
 const dataDir = resolve(root, '.local', 'dev-data');
 mkdirSync(dataDir, { recursive: true });
@@ -19,7 +19,7 @@ const appVersion = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'
 // Only named development credentials enter Python; none are VITE_ fields or bundled assets.
 const modelEnv = process.env.STA_DEV_ENV_FILE ? parseEnv(readFileSync(process.env.STA_DEV_ENV_FILE, 'utf8')) : {};
 const toolEnv = Object.fromEntries(['AMAP_MAPS_API_KEY', 'BAIDU_MAP_API_KEY', 'TAVILY_API_KEY', 'SERPER_API_KEY'].map(name => [name, modelEnv[name] || process.env[name] || '']));
-const backend = spawn(python, [resolve(root, 'backend/main.py'), '--host', '127.0.0.1', '--port', '0', '--data-dir', dataDir], {
+const backend = spawn(python, [resolve(root, 'server/src/main.py'), '--host', '127.0.0.1', '--port', '0', '--data-dir', dataDir], {
   cwd: root,
   env: { ...process.env, ...toolEnv, STA_APP_VERSION: appVersion, STA_MODEL_API_KEY: modelEnv.SAGE_API_KEY || process.env.STA_MODEL_API_KEY || '', STA_MODEL_BASE_URL: modelEnv.SAGE_BASE_URL || process.env.STA_MODEL_BASE_URL || '', STA_MODEL_NAME: modelEnv.SAGE_MODEL_NAME || process.env.STA_MODEL_NAME || '', STA_BACKEND_TOKEN: token, PYTHONUNBUFFERED: '1' },
   stdio: ['pipe', 'pipe', 'pipe'],
@@ -51,7 +51,7 @@ createInterface({ input: backend.stdout }).on('line', (line) => {
   if (ready.event !== 'ready' || web) return;
   clearTimeout(startupTimeout);
   web = spawn(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', '1420', '--strictPort'], {
-    cwd: root,
+    cwd: resolve(root, 'client'),
     env: { ...process.env, VITE_API_BASE: `http://127.0.0.1:${ready.port}`, VITE_API_TOKEN: token, VITE_DATA_DIR: dataDir },
     stdio: 'inherit',
     windowsHide: true,

@@ -2,12 +2,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configureUpdater } from './configure-updater.mjs';
-import { sharedToolsUrl } from './configure-tools.mjs';
+import { configureUpdater } from '../client/scripts/configure-updater.mjs';
+import { sharedToolsUrl } from '../client/scripts/configure-tools.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
-const venv = path.join(root, 'backend', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+const venv = path.join(root, 'server', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 const python = process.env.STA_PYTHON || (existsSync(venv) ? venv : 'python');
 const args = process.argv.slice(2);
 const isDev = args[0] === '--dev';
@@ -15,8 +15,8 @@ if (isDev) args.shift();
 const targetIndex = args.indexOf('--target');
 const targetArgs = targetIndex >= 0 ? ['--target', args[targetIndex + 1]] : [];
 
-function run(command, params) {
-  const result = spawnSync(command, params, { cwd: root, stdio: 'inherit', env: process.env });
+function run(command, params, cwd = root) {
+  const result = spawnSync(command, params, { cwd, stdio: 'inherit', env: process.env });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status || 1);
 }
@@ -24,7 +24,7 @@ function run(command, params) {
 try {
   process.env.STA_SHARED_TOOLS_URL = sharedToolsUrl(process.env);
   const config = await configureUpdater();
-  run(python, ['scripts/generate-icons.py']);
-  run(python, ['scripts/build-sidecar.py', ...targetArgs, ...(isDev ? ['--allow-missing-pdf-assets'] : [])]);
-  run(process.execPath, ['node_modules/@tauri-apps/cli/tauri.js', isDev ? 'dev' : 'build', '--config', config, ...args]);
+  run(python, ['client/scripts/generate-icons.py']);
+  run(python, ['server/scripts/build-sidecar.py', ...targetArgs, ...(isDev ? ['--allow-missing-pdf-assets'] : [])]);
+  run(process.execPath, [path.join(root, 'node_modules/@tauri-apps/cli/tauri.js'), isDev ? 'dev' : 'build', '--config', config, ...args], path.join(root, 'client'));
 } catch (error) { console.error(error.message); process.exitCode = 1; }

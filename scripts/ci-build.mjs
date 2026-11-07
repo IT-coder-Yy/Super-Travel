@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, cpSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { sharedToolsUrl, verifySharedTools } from './configure-tools.mjs';
+import { sharedToolsUrl, verifySharedTools } from '../client/scripts/configure-tools.mjs';
 const [target, bundles] = process.argv.slice(2);
 if (!target || !bundles) throw new Error('Usage: node scripts/ci-build.mjs <target-triple> <bundles>');
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
@@ -20,15 +20,15 @@ function run(command,args) {
 }
 run(process.execPath,['scripts/desktop-build.mjs','--target',target,'--bundles',bundles]);
 const extension = target.includes('windows') ? '.exe' : '';
-run('python',['scripts/smoke-sidecar.py',`src-tauri/binaries/supertravel-backend-${target}${extension}`,'--version',version]);
-const bundleDir=`src-tauri/target/${target}/release/bundle`;
+run('python',['server/scripts/smoke-sidecar.py',`client/src-tauri/binaries/supertravel-backend-${target}${extension}`,'--version',version]);
+const bundleDir=`client/src-tauri/target/${target}/release/bundle`;
 const out=`artifacts/${target}`;
 if(process.platform==='darwin' || process.platform==='linux') {
   const mac=process.platform==='darwin';
   const folder=path.join(bundleDir,mac?'macos':'appimage');
   const artifacts=readdirSync(folder,{withFileTypes:true}).filter(entry=>mac ? entry.isDirectory() && entry.name.endsWith('.app') : entry.isFile() && entry.name.endsWith('.AppImage'));
   if(artifacts.length!==1) throw new Error(`Expected one native application in ${folder}, found ${artifacts.length}`);
-  const smoke=['scripts/smoke-native.py',path.join(folder,artifacts[0].name),'--version',version];
+  const smoke=['client/scripts/smoke-native.py',path.join(folder,artifacts[0].name),'--version',version];
   if(mac) run('python',smoke);
   else run('xvfb-run',['-a','dbus-run-session','--','python',...smoke]);
 }
