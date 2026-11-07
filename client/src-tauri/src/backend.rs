@@ -106,11 +106,12 @@ fn backend_command() -> Result<Command, String> {
     {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
+            .and_then(|directory| directory.parent())
             .ok_or("工程目录无效")?;
         let venv = root.join(if cfg!(windows) {
-            "backend/.venv/Scripts/python.exe"
+            "server/.venv/Scripts/python.exe"
         } else {
-            "backend/.venv/bin/python"
+            "server/.venv/bin/python"
         });
         let python = std::env::var_os("STA_PYTHON")
             .map(PathBuf::from)
@@ -122,7 +123,7 @@ fn backend_command() -> Result<Command, String> {
                 }
             });
         let mut command = Command::new(python);
-        command.arg(root.join("backend/main.py"));
+        command.arg(root.join("server/src/main.py"));
         Ok(command)
     }
     #[cfg(not(debug_assertions))]
