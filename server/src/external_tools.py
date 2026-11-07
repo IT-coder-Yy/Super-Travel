@@ -5,9 +5,9 @@ import asyncio
 import json
 import os
 
-from backend.mcp_client import McpClient, ToolError
-from backend.amap_tools import AmapTools
-from backend.search_tools import SearchTools
+from supertravel_server.mcp_client import McpClient, ToolError
+from supertravel_server.amap_tools import AmapTools
+from supertravel_server.search_tools import SearchTools
 
 
 KEY_NAMES = ("AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY")

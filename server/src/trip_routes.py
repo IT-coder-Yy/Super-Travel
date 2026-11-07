@@ -9,7 +9,7 @@ import math
 from jsonschema import validate
 from referencing import Registry
 
-from backend.mcp_client import ToolError
+from supertravel_server.mcp_client import ToolError
 
 
 ROUTE_MAX_AGE_SECONDS = 24 * 60 * 60

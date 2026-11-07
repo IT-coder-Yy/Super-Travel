@@ -9,11 +9,11 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.candidates import (Candidate, active_candidates, as_candidate, has_draft, insertion_options,
+from supertravel_server.candidates import (Candidate, active_candidates, as_candidate, has_draft, insertion_options,
                                 minutes, validate_candidate_snapshot)
-from backend.mcp_client import ToolError
-from backend.trips import ActivityCost, IncomingRoute, TripResearch, TripResult, TripTimingError, validate_result
-from backend.trip_routes import route_fresh, route_matches, unknown_route
+from supertravel_server.mcp_client import ToolError
+from supertravel_server.trips import ActivityCost, IncomingRoute, TripResearch, TripResult, TripTimingError, validate_result
+from supertravel_server.trip_routes import route_fresh, route_matches, unknown_route
 
 
 class TripRevision(BaseModel):
@@ -565,7 +565,7 @@ def trip_router(agents, store, error_type):
             data = document.data
             if not has_draft(data) or not data.get("trip"):
                 raise error_type(409, "draft_missing", "没有可应用的真实行程草稿。")
-            from backend.trips import validate_result
+            from supertravel_server.trips import validate_result
             try:
                 days = deepcopy(data["draft"] if data.get("draft") is not None else data["days"])
                 pool = deepcopy(active_candidates(data))
@@ -590,7 +590,7 @@ def trip_router(agents, store, error_type):
             previous = document.data.get("previousTrip")
             if not previous:
                 raise error_type(409, "previous_trip_missing", "还没有可恢复的上一版行程。")
-            from backend.trips import validate_result
+            from supertravel_server.trips import validate_result
             try:
                 result = validate_result({"days": previous["days"], "trip": previous["trip"]})
                 pool = deepcopy(previous.get("candidates", []))

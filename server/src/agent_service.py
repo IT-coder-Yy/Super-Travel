@@ -11,12 +11,12 @@ from fastapi import APIRouter
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.agents import AgentSession
-from backend.preferences import PreferencesStore
-from backend.mcp_client import McpClient, ToolError
-from backend.external_tools import ExternalTools
-from backend.shared_tools import SharedTools
-from backend.model import ModelClient, ModelConfig, ModelError
+from supertravel_server.agents import AgentSession
+from supertravel_server.preferences import PreferencesStore
+from supertravel_server.mcp_client import McpClient, ToolError
+from supertravel_server.external_tools import ExternalTools
+from supertravel_server.shared_tools import SharedTools
+from supertravel_server.model import ModelClient, ModelConfig, ModelError
 
 
 SAVE_ERROR = "本次对话或进度未能完整保存，请检查本地数据目录。已有文件已保留。"
@@ -228,8 +228,8 @@ class AgentService:
                     previous = data.get("agent") or {}
                     result = state.get("trip_result")
                     if state.get("status") == "completed" and result and not (previous.get("run_id") == state.get("run_id") and previous.get("status") == "completed"):
-                        from backend.candidates import active_candidates, validate_candidate_snapshot
-                        from backend.trips import validate_result
+                        from supertravel_server.candidates import active_candidates, validate_candidate_snapshot
+                        from supertravel_server.trips import validate_result
                         result = validate_result(result)
                         pool = active_candidates(data)
                         selected = state.get("submitted_candidate_ids", [])
@@ -306,7 +306,7 @@ class AgentService:
             meta = data.get("draftTrip") or data.get("trip")
             trip_context = {"days": data["draft"] if data.get("draft") is not None else data.get("days"), "trip": meta} if meta else None
             if trip_context:
-                from backend.candidates import active_candidates
+                from supertravel_server.candidates import active_candidates
                 pool = active_candidates(data)
                 if pool:
                     trip_context["candidates"] = pool

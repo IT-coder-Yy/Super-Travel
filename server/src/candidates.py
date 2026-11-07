@@ -5,8 +5,8 @@ import json
 
 from pydantic import Field, model_validator
 
-from backend.trips import ActivityCost, Place, StrictModel
-from backend.trip_routes import query_route, route_fresh, unknown_route
+from supertravel_server.trips import ActivityCost, Place, StrictModel
+from supertravel_server.trip_routes import query_route, route_fresh, unknown_route
 
 
 class Candidate(StrictModel):

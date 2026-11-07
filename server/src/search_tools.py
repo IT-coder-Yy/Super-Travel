@@ -11,7 +11,7 @@ from urllib.parse import quote, urlsplit
 import httpx
 from jsonschema import ValidationError, validate
 
-from backend.mcp_client import ToolError
+from supertravel_server.mcp_client import ToolError
 
 
 ENDPOINT = "https://google.serper.dev/search"

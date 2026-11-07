@@ -8,7 +8,7 @@ import json
 import httpx2
 from jsonschema import ValidationError, validate
 
-from backend.mcp_client import McpClient, ToolError, _CredentialFilter
+from supertravel_server.mcp_client import McpClient, ToolError, _CredentialFilter
 
 
 ROUTES = {

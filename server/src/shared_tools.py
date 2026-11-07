@@ -8,8 +8,8 @@ import json
 
 import httpx
 
-from backend.external_tools import ALLOWED, SERVICES
-from backend.mcp_client import ToolError
+from supertravel_server.external_tools import ALLOWED, SERVICES
+from supertravel_server.mcp_client import ToolError
 
 
 ERRORS = {

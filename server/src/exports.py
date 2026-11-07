@@ -9,9 +9,9 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import ValidationError
 
-from backend.trip_api import TripRevision
-from backend.trip_routes import route_fresh, route_matches
-from backend.trips import ActivityCost, IncomingRoute, TripResult, trip_overview
+from supertravel_server.trip_api import TripRevision
+from supertravel_server.trip_routes import route_fresh, route_matches
+from supertravel_server.trips import ActivityCost, IncomingRoute, TripResult, trip_overview
 
 
 MODES = {"walking": "步行", "driving": "驾车", "transit": "公共交通"}
@@ -136,7 +136,7 @@ def export_router(store, error_type):
         blocks = export_blocks(days, trip, document.revision)
         result = {"revision": document.revision, "filename": f"{destination}-行程.md", "markdown": _markdown(blocks)}
         if payload.format == "pdf":
-            from backend.pdf_export import PdfExportError, render_pdf
+            from supertravel_server.pdf_export import PdfExportError, render_pdf
             try:
                 result["pdfBase64"] = b64encode(render_pdf(result["markdown"])).decode("ascii")
             except PdfExportError as error:

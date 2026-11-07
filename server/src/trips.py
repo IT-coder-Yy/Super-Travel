@@ -11,8 +11,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from backend.mcp_client import ToolError
-from backend.trip_routes import MODES, query_route, route_fresh, route_matches, unknown_route
+from supertravel_server.mcp_client import ToolError
+from supertravel_server.trip_routes import MODES, query_route, route_fresh, route_matches, unknown_route
 
 
 class StrictModel(BaseModel):
@@ -255,7 +255,7 @@ class TripResearch:
         self.candidates: dict[str, dict] = {}
         self.submitted_candidate_ids: list[str] = []
         if existing_candidates:
-            from backend.candidates import Candidate, validate_candidate_snapshot
+            from supertravel_server.candidates import Candidate, validate_candidate_snapshot
             validate_candidate_snapshot(existing_days or [], existing_candidates)
             self.candidates = {item["id"]: Candidate.model_validate(item).model_dump(exclude_none=True) for item in existing_candidates}
         self.routes: dict[tuple[str, str, str], dict] = {}

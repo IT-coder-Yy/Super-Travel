@@ -14,8 +14,8 @@ from jsonschema import SchemaError, ValidationError as SchemaValidationError, va
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.exceptions import HTTPException
 
-from backend.external_tools import ExternalTools, KEY_NAMES
-from backend.mcp_client import ToolError, _CredentialFilter
+from supertravel_server.external_tools import ExternalTools, KEY_NAMES
+from supertravel_server.mcp_client import ToolError, _CredentialFilter
 
 
 ERRORS = {

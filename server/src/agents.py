@@ -13,8 +13,8 @@ from jsonschema import validate as validate_schema
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from referencing import Registry
 
-from backend.model import ModelClient, ModelError
-from backend.trips import ROUTE_TOOL as TRIP_ROUTE_TOOL, SEARCH_TOOL, SUBMIT_TOOL, TripRequest, TripResearch, trip_overview
+from supertravel_server.model import ModelClient, ModelError
+from supertravel_server.trips import ROUTE_TOOL as TRIP_ROUTE_TOOL, SEARCH_TOOL, SUBMIT_TOOL, TripRequest, TripResearch, trip_overview
 
 
 PreferenceValue = TypeVar("PreferenceValue")
