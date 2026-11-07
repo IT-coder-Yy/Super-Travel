@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import runpy
 import shlex
 import shutil
 import socket
@@ -24,8 +25,8 @@ import urllib.error
 import urllib.request
 import uuid
 
-ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = ROOT / "tests/native/fixture_server.py"
+ROOT = Path(__file__).resolve().parents[2]
+FIXTURE = ROOT / "client/tests/native/fixture_server.py"
 ELEMENT = "element-6066-11e4-a52e-4f735466cecf"
 
 
@@ -227,23 +228,24 @@ class WebView:
 
 def build(target, work):
     extension = ".exe" if os.name == "nt" else ""
-    original_sidecar = ROOT / "src-tauri/binaries" / f"supertravel-backend-{target}{extension}"
+    original_sidecar = ROOT / "client/src-tauri/binaries" / f"supertravel-backend-{target}{extension}"
     hashes = {"productionSidecar": sha(original_sidecar)}
-    hashes["frontendAssets"] = {str(path.relative_to(ROOT / "dist")): sha(path) for path in sorted((ROOT / "dist").rglob("*")) if path.is_file()}
+    hashes["frontendAssets"] = {str(path.relative_to(ROOT / "client/dist")): sha(path) for path in sorted((ROOT / "client/dist").rglob("*")) if path.is_file()}
     run(sys.executable, FIXTURE, "--prepare", work)
-    # Do not touch the production PyInstaller dist/spec or src-tauri/binaries.
+    # Do not touch the production PyInstaller dist/spec or client/src-tauri/binaries.
     run(sys.executable, FIXTURE, "--trust", work)
     try:
-        run(sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--name", "supertravel-backend", "--distpath", work / "bin", "--workpath", work / "pyinstaller", "--specpath", work, "--paths", ROOT, "--collect-submodules", "uvicorn", ROOT / "backend/main.py")
+        builder = runpy.run_path(str(ROOT / "server/scripts/build-sidecar.py"))
+        builder["freeze"](work / "pyinstaller", [], work / "bin")
     finally:
         run(sys.executable, FIXTURE, "--restore", work)
     assert sha(original_sidecar) == hashes["productionSidecar"], "Production sidecar must not be replaced by the fixture variant"
     identifier = "com.supertravel.desktop.nativegui.run" + uuid.uuid4().hex
     overrides = {"identifier": identifier, "app": {"security": {"capabilities": ["main-window", {"identifier": "native-gui-driver", "windows": ["main"], "permissions": ["wdio-webdriver:default"]}]}}, "bundle": {"active": False}}
     env = {**os.environ, "TAURI_CONFIG": json.dumps(overrides)}
-    run("cargo", "build", "--manifest-path", "src-tauri/Cargo.toml", "--release", "--locked", "--target", target, "--features", "native-gui-tests,tauri/custom-protocol", env=env)
+    run("cargo", "build", "--manifest-path", "client/src-tauri/Cargo.toml", "--release", "--locked", "--target", target, "--features", "native-gui-tests,tauri/custom-protocol", env=env)
     binary = work / "bin" / f"supertravel-desktop{extension}"
-    shutil.copy2(ROOT / "src-tauri/target" / target / "release" / binary.name, binary)
+    shutil.copy2(ROOT / "client/src-tauri/target" / target / "release" / binary.name, binary)
     hashes.update({"testApp": sha(binary), "testSidecar": sha(work / "bin" / f"supertravel-backend{extension}"), "testIdentifier": identifier})
     return binary, hashes
 

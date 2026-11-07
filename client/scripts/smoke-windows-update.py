@@ -24,7 +24,7 @@ from urllib.parse import unquote, urlparse
 spec = importlib.util.spec_from_file_location("native_update", Path(__file__).with_name("smoke-native-update.py"))
 native_update = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native_update)
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PLATFORM = "windows-x86_64-nsis"
 
 
@@ -75,8 +75,8 @@ def exercise(args) -> dict:
     if not any(item["name"] == name and item["sha256"] == native_update.release.digest(package) for item in metadata["files"]):
         raise ValueError("Candidate checksum mismatch")
     expected = {
-        "supertravel-desktop.exe": ROOT / "src-tauri/target/x86_64-pc-windows-msvc/release/supertravel-desktop.exe",
-        "supertravel-backend.exe": ROOT / "src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe",
+        "supertravel-desktop.exe": ROOT / "client/src-tauri/target/x86_64-pc-windows-msvc/release/supertravel-desktop.exe",
+        "supertravel-backend.exe": ROOT / "client/src-tauri/binaries/supertravel-backend-x86_64-pc-windows-msvc.exe",
     }
     expected_hashes = {name: native_update.release.digest(path) for name, path in expected.items()}
     expected_hashes["supertravel-desktop.exe"] = nsis_main_digest(expected["supertravel-desktop.exe"])
@@ -175,7 +175,7 @@ def exercise(args) -> dict:
                                    timeout=15, check=False)
                     raise RuntimeError("NSIS did not install the exact candidate binaries")
                 time.sleep(1)
-            subprocess.run([sys.executable, str(ROOT / "scripts/smoke-sidecar.py"), str(install / "supertravel-backend.exe"), "--version", version], check=True, env=env, timeout=120)
+            subprocess.run([sys.executable, str(ROOT / "server/scripts/smoke-sidecar.py"), str(install / "supertravel-backend.exe"), "--version", version], check=True, env=env, timeout=120)
             native_update.assert_profile(snapshot)
         finally:
             server.shutdown(); server.server_close(); thread.join(timeout=5)

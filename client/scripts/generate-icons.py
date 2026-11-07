@@ -4,17 +4,17 @@ from shutil import copyfile
 from subprocess import run
 from tempfile import TemporaryDirectory
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
     local = ROOT / ".local"
     local.mkdir(exist_ok=True)
-    icons = ROOT / "src-tauri" / "icons"
+    icons = ROOT / "client/src-tauri" / "icons"
     icons.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix="icons-", dir=local) as output:
         run(["node", str(ROOT / "node_modules/@tauri-apps/cli/tauri.js"),
-             "icon", str(ROOT / "src/assets/app-icon.svg"), "--output", output],
+             "icon", str(ROOT / "client/src/assets/app-icon.svg"), "--output", output],
             cwd=ROOT, check=True)
         for name in ("32x32.png", "128x128.png", "icon.ico", "icon.icns"):
             copyfile(Path(output) / name, icons / name)

@@ -25,11 +25,11 @@ from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_module(name: str, file: str):
-    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(file))
+    spec = importlib.util.spec_from_file_location(name, (ROOT / "scripts" / file) if file == "prepare-release.py" else Path(__file__).with_name(file))
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)

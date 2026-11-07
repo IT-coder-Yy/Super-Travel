@@ -1,7 +1,7 @@
 """Smoke a real macOS .app or Linux AppImage, including its own backend.
 
-Linux CI: xvfb-run -a python scripts/smoke-native.py <file.AppImage> --version 0.1.0
-macOS CI: python scripts/smoke-native.py <SuperTravel.app> --version 0.1.0
+Linux CI: xvfb-run -a python client/scripts/smoke-native.py <file.AppImage> --version 0.1.0
+macOS CI: python client/scripts/smoke-native.py <SuperTravel.app> --version 0.1.0
 
 This checks process survival, an owned loopback backend, and parent-exit cleanup.
 It does not assert rendered UI, macOS Gatekeeper approval, or an in-app Quit event:
