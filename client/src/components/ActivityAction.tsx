@@ -8,15 +8,16 @@ type Props = {
   conversation: ConversationSummary
   activity: Activity
   days: TripDay[]
+  initialTargetIndex?: number
   onSave: (move?: ActivityMove) => Promise<void>
   onPark: () => Promise<void>
   onCancel: () => void
 }
 
-export function ActivityAction({ kind, conversation, activity, days, onSave, onPark, onCancel }: Props) {
+export function ActivityAction({ kind, conversation, activity, days, initialTargetIndex, onSave, onPark, onCancel }: Props) {
   const sourceDay = days.find(day => day.activities.some(item => item.id === activity.id))!
   const [targetDay, setTargetDay] = useState(sourceDay.day)
-  const [targetIndex, setTargetIndex] = useState(sourceDay.activities.findIndex(item => item.id === activity.id))
+  const [targetIndex, setTargetIndex] = useState(initialTargetIndex ?? sourceDay.activities.findIndex(item => item.id === activity.id))
   const [time, setTime] = useState(activity.time)
   const [preview, setPreview] = useState<ActivityDeletePreview | null>(null)
   const [reading, setReading] = useState(kind === 'delete')

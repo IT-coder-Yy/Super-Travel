@@ -157,3 +157,15 @@
 .preference-clear .button-row{margin-top:9px}
 .agent-preference-summary{line-height:1.7}
 @media(max-width:420px){.preference-options{grid-template-columns:1fr}}
+
+.activity-drag-handle{cursor:grab;touch-action:none}
+.activity-drag-handle:active{cursor:grabbing;background:var(--blue-pale)}
+.activity-drag-handle:disabled{cursor:default}
+.editor-activity{position:relative}
+.editor-activity--dragging{background:var(--blue-pale)}
+.editor-activity--drop-before::before,.editor-activity--drop-after::after{content:"";position:absolute;left:0;right:0;height:3px;background:var(--blue);pointer-events:none}
+.editor-activity--drop-before::before{top:0}
+.editor-activity--drop-after::after{bottom:0}
+.activity-drag-preview{position:fixed;z-index:4;pointer-events:none;display:flex;align-items:center;gap:8px;max-width:216px;padding:10px 12px;border-radius:8px;background:var(--ink);color:white;box-shadow:0 4px 14px #13264e30;font-size:12px;line-height:1.6}
+.activity-drag-preview span{min-width:0;overflow-wrap:anywhere}
+.activity-drag-preview small{display:block;font-size:11px}
