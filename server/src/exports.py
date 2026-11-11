@@ -45,6 +45,25 @@ def _money(amount_fen):
     return f"¥{amount_fen // 100}.{amount_fen % 100:02d}"
 
 
+def _transit(details):
+    if details is None:
+        return "公交详情未查询。"
+    transfers, fare = details.get("transferCount"), details.get("fare")
+    lines = [f"换乘 {transfers} 次（按乘车段计算）" if transfers is not None else "换乘次数待确认"]
+    lines.append("参考总票价：" + _money(fare["amountFen"]) + "（仅供参考，以实际结果为准）" if fare else "参考总票价未知")
+    for segment in details["segments"]:
+        if segment["mode"] == "walking":
+            lines.append("步行接驳")
+        elif segment["mode"] == "other":
+            lines.append("此段交通详情待确认")
+        else:
+            lines.append(f"{_plain(segment.get('lineName') or '线路待确认')}：{_plain(segment.get('departureStop') or '上车站待确认')} 上车 → {_plain(segment.get('arrivalStop') or '下车站待确认')} 下车")
+    if not details["segments"]:
+        lines.append("公交分段详情待确认")
+    lines.append("供应商首方案，仅供出行参考；交通参考价不计入活动费用小计。")
+    return "；".join(lines) + "。"
+
+
 def _route(previous, activity, mode):
     if previous is None:
         return "当日首项，无前序活动接驳。"
@@ -63,7 +82,8 @@ def _route(previous, activity, mode):
     if not route_fresh(route):
         return f"未知 / 待确认；路线记录已过期或查询时间无效，不能作为当前已核验接驳。{evidence}"
     return (f"已查询估算：{MODES[route['mode']]}约 {route['durationMinutes']} 分钟，"
-            f"{route['distanceMeters']} 米。{evidence}")
+            f"{route['distanceMeters']} 米。{evidence}"
+            + ("\n" + _transit(route.get("transit")) if route["mode"] == "transit" else ""))
 
 
 def export_blocks(days, trip, revision):

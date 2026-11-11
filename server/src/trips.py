@@ -39,6 +39,24 @@ class ActivityCost(StrictModel):
     source: Literal["user"] = "user"
 
 
+class TransitSegment(StrictModel):
+    mode: Literal["walking", "bus", "subway", "other"]
+    lineName: str | None = Field(default=None, min_length=1, max_length=200)
+    departureStop: str | None = Field(default=None, min_length=1, max_length=200)
+    arrivalStop: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class TransitFare(StrictModel):
+    amountFen: int = Field(ge=0, le=100000000)
+    currency: Literal["CNY"] = "CNY"
+
+
+class TransitDetails(StrictModel):
+    segments: list[TransitSegment] = Field(max_length=64)
+    transferCount: int | None = Field(default=None, ge=0, le=63)
+    fare: TransitFare | None = None
+
+
 class IncomingRoute(StrictModel):
     fromPlaceId: str = Field(min_length=1, max_length=200)
     toPlaceId: str = Field(min_length=1, max_length=200)
@@ -49,6 +67,7 @@ class IncomingRoute(StrictModel):
     provider: Literal["baidu", "amap"] | None = None
     queriedAt: str | None = Field(default=None, max_length=50)
     reason: str | None = Field(default=None, max_length=500)
+    transit: TransitDetails | None = None
 
     @model_validator(mode="after")
     def complete_evidence(self):
@@ -58,6 +77,8 @@ class IncomingRoute(StrictModel):
             raise ValueError("verified route needs provider metrics and time")
         if self.status == "unknown" and (self.durationMinutes is not None or self.distanceMeters is not None):
             raise ValueError("unknown route cannot contain metrics")
+        if self.transit is not None and (self.mode != "transit" or self.status != "verified"):
+            raise ValueError("transit details need a verified transit route")
         return self
 
 

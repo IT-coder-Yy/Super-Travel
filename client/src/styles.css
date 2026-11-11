@@ -170,3 +170,16 @@
 .activity-drag-preview span{min-width:0;overflow-wrap:anywhere}
 .activity-drag-preview small{display:block;font-size:11px}
 .editor-day-tabs button.editor-day-drop-target{background:var(--blue-pale);color:var(--blue);outline:2px solid var(--blue);outline-offset:2px}
+
+.activity-entry { min-width: 0; }
+.activity-entry > .activity { width: 100%; }
+.activity-entry > .trip-leg { margin: 0 12px 12px 38px; }
+.transit-details { color: #13264e; line-height: 1.65; }
+.transit-details summary { cursor: pointer; padding: 6px 0; color: #1457d9; border-radius: 4px; }
+.transit-details summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+.transit-details summary:focus-visible { outline: 2px solid #1457d9; outline-offset: 2px; }
+.transit-details summary > span { display: block; color: #435c7c; font-variant-numeric: tabular-nums; }
+.transit-details p { margin: 6px 0; }
+.transit-details ol { margin: 8px 0; padding-left: 20px; }
+.transit-details li { margin: 6px 0; overflow-wrap: anywhere; }
+.transit-details .trip-leg-note { color: #435c7c; }
