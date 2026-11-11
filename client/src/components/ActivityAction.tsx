@@ -9,14 +9,15 @@ type Props = {
   activity: Activity
   days: TripDay[]
   initialTargetIndex?: number
+  initialTargetDay?: number
   onSave: (move?: ActivityMove) => Promise<void>
   onPark: () => Promise<void>
   onCancel: () => void
 }
 
-export function ActivityAction({ kind, conversation, activity, days, initialTargetIndex, onSave, onPark, onCancel }: Props) {
+export function ActivityAction({ kind, conversation, activity, days, initialTargetIndex, initialTargetDay, onSave, onPark, onCancel }: Props) {
   const sourceDay = days.find(day => day.activities.some(item => item.id === activity.id))!
-  const [targetDay, setTargetDay] = useState(sourceDay.day)
+  const [targetDay, setTargetDay] = useState(initialTargetDay ?? sourceDay.day)
   const [targetIndex, setTargetIndex] = useState(initialTargetIndex ?? sourceDay.activities.findIndex(item => item.id === activity.id))
   const [time, setTime] = useState(activity.time)
   const [preview, setPreview] = useState<ActivityDeletePreview | null>(null)
@@ -71,11 +72,11 @@ export function ActivityAction({ kind, conversation, activity, days, initialTarg
           <div className="field-label"><label htmlFor="move-target-day">目标日期</label><select id="move-target-day" autoFocus value={targetDay} onChange={event => {
             const value = Number(event.target.value)
             const available = days.find(day => day.day === value)?.activities.filter(item => item.id !== activity.id) ?? []
-            setTargetDay(value); setTargetIndex(Math.min(available.length, 7)); setError('')
+            setTargetDay(value); setTargetIndex(available.length); setError('')
           }}>{days.map(day => <option value={day.day} key={day.day}>第 {day.day} 天{day.day === sourceDay.day ? '（当前）' : ''}</option>)}</select></div>
           <div className="field-label"><label htmlFor="move-target-index">插入位置</label><select id="move-target-index" value={targetIndex} onChange={event => { setTargetIndex(Number(event.target.value)); setError('') }}>
             <option value={0}>排在最前</option>
-            {targetActivities.slice(0, 7).map((item, index) => <option key={item.id} value={index + 1}>{item.time} {item.title}之后</option>)}
+            {targetActivities.map((item, index) => <option key={item.id} value={index + 1}>{item.time} {item.title}之后</option>)}
           </select></div>
         </div>
         <label className="field-label move-time">移动后开始时间<input type="time" step={900} value={time} onChange={event => { setTime(event.target.value); setError('') }} /></label>

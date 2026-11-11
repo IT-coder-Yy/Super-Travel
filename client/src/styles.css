@@ -169,3 +169,4 @@
 .activity-drag-preview{position:fixed;z-index:4;pointer-events:none;display:flex;align-items:center;gap:8px;max-width:216px;padding:10px 12px;border-radius:8px;background:var(--ink);color:white;box-shadow:0 4px 14px #13264e30;font-size:12px;line-height:1.6}
 .activity-drag-preview span{min-width:0;overflow-wrap:anywhere}
 .activity-drag-preview small{display:block;font-size:11px}
+.editor-day-tabs button.editor-day-drop-target{background:var(--blue-pale);color:var(--blue);outline:2px solid var(--blue);outline-offset:2px}

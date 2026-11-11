@@ -1,11 +1,12 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
+import type { WorkspaceData } from '../../src/types';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
 
 test.use({ reducedMotion: 'reduce' });
 
-async function setup(page: Page, localApp: LocalApp) {
+async function setup(page: Page, localApp: LocalApp, change?: (data: WorkspaceData) => void) {
   await page.route('https://**/*', route => route.request().url().startsWith('https://tile.openstreetmap.org/')
     ? route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#edf3ee"/></svg>' })
     : route.abort());
@@ -29,10 +30,11 @@ async function setup(page: Page, localApp: LocalApp) {
   formal.data.favorites = [formal.data.days[0].activities[0].id];
   const { time, x, y, incomingRoute, ...candidate } = structuredClone(third);
   formal.data.candidates = [{ ...candidate, id: 'drag-candidate', destination: '杭州' }];
+  change?.(formal.data);
   const path = resolve(localApp.dataDir, 'conversations', document.id + '.json');
   await writeFile(path, JSON.stringify(formal), 'utf8');
   await page.reload();
-  await expect(page.locator('.activity-heading')).toHaveCount(3);
+  await expect(page.locator('.activity-heading')).toHaveCount(formal.data.days[0].activities.length);
   await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
   await expect(page.locator('.activity-drag-handle').first()).toBeEnabled();
   return { id: document.id, path, formal, read: () => localApp.request('/conversations/' + document.id) };
@@ -237,5 +239,210 @@ test('相邻移动前保存失败保留输入，再拖动可重试；切换日�
   await page.mouse.up();
   await expect(tab).toHaveClass('selected');
   expect(moves).toBe(1);
+  expect((await trip.read()).data.days).toEqual(trip.formal.data.days);
+});
+
+function crossDays(data: WorkspaceData) {
+  const target = structuredClone(data.days[0].activities[2]);
+  target.id = 'day2-garden'; target.time = '10:00';
+  data.days[1].activities = [target];
+  for (let index = 1; index < data.days[0].activities.length; index++) {
+    const activities = data.days[0].activities;
+    activities[index].incomingRoute = { fromPlaceId: activities[index - 1].place!.id, toPlaceId: activities[index].place!.id,
+      mode: 'walking', status: 'verified', durationMinutes: 15, distanceMeters: 500, provider: 'baidu', queriedAt: new Date().toISOString() };
+  }
+}
+
+async function hoverDate(page: Page, from: number, targetDay: number) {
+  const start = await beginDrag(page, from);
+  await page.mouse.move(start.x - 12, start.y, { steps: 2 });
+  const tab = page.locator(`[data-drop-day="${targetDay}"]`);
+  await tab.scrollIntoViewIfNeeded();
+  const box = (await tab.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await expect(tab).toHaveClass(/editor-day-drop-target/);
+  return tab;
+}
+
+async function dragToDate(page: Page, from: number, targetDay: number) {
+  await hoverDate(page, from, targetDay);
+  await page.mouse.up();
+  await expect(page.getByRole('dialog', { name: '移动活动', exact: true })).toBeVisible();
+  await expect(page.getByLabel('目标日期', { exact: true })).toHaveValue(String(targetDay));
+}
+
+test('跨日拖拽只预填目标日：取消、迟到响应、应用重启与固定聊天续改保持身份', async ({ page, localApp }) => {
+  test.setTimeout(120_000);
+  const trip = await setup(page, localApp, crossDays);
+  const first = trip.formal.data.days[0].activities[0];
+  await page.getByLabel('备注', { exact: true }).first().fill('跨日后仍保留的备注');
+  await page.getByLabel('活动费用（元）', { exact: true }).first().fill('42.50');
+  await hoverDate(page, 0, 2);
+  const hovering = await trip.read();
+  await page.waitForTimeout(1100);
+  expect((await trip.read()).revision).toBe(hovering.revision);
+  await expect(page.getByRole('dialog').getByRole('button', { name: '第 1 天', exact: true })).toHaveClass('selected');
+  await expect(page.locator('[data-activity-id]')).toHaveCount(3);
+  await expect(page.locator('.editor-activity--drop-after')).toHaveCount(0);
+  await page.screenshot({ path: 'artifacts/c2-date-hover-1440.png' });
+  await page.mouse.up();
+  await expect(page.getByLabel('目标日期', { exact: true })).toHaveValue('2');
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue('1');
+  await expect(page.getByLabel('移动后开始时间')).toHaveValue('09:00');
+  await page.getByRole('button', { name: '返回编辑', exact: true }).click();
+  await expect(page.locator('#drag-trip-activity-' + first.id)).toBeFocused();
+  expect((await trip.read()).data.days).toEqual(trip.formal.data.days);
+  await expect(page.getByLabel('备注', { exact: true }).first()).toHaveValue('跨日后仍保留的备注');
+  await dragToDate(page, 0, 2);
+  await page.getByLabel('移动后开始时间').fill('12:00');
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('**/trip/activities/move', async route => {
+    calls++;
+    expect(route.request().postDataJSON()).toMatchObject({ activity_id: first.id, target_day: 2, target_index: 1, time: '12:00' });
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: '移动到草稿', exact: true }).dblclick();
+  await expect.poll(() => calls).toBe(1);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: '移动活动', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '关闭窗口', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('目标日期', { exact: true })).toBeDisabled();
+  release();
+  await expect(page.locator('#drag-trip-activity-' + first.id)).toBeFocused();
+  await expect(page.getByRole('dialog').getByRole('button', { name: '第 2 天', exact: true })).toHaveClass('selected');
+  let saved = await trip.read();
+  expect(saved.data.days).toEqual(trip.formal.data.days);
+  expect(saved.data.draft.map((day: { activities: unknown[] }) => day.activities.length)).toEqual([2, 2]);
+  const moved = saved.data.draft[1].activities[1];
+  expect(moved).toMatchObject({ id: first.id, time: '12:00', description: '跨日后仍保留的备注', cost: { amountFen: 4250 }, place: first.place });
+  expect(saved.data.draft[0].activities[0].incomingRoute).toBeUndefined();
+  expect(saved.data.draft[0].activities[1].incomingRoute).toEqual(trip.formal.data.days[0].activities[2].incomingRoute);
+  expect(moved.incomingRoute).toBeUndefined();
+  expect(saved.data.candidates).toEqual(trip.formal.data.candidates);
+  expect(saved.data.favorites).toEqual(trip.formal.data.favorites);
+  await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  saved = await trip.read();
+  expect(saved.data.days[1].activities[1].incomingRoute).toMatchObject({ fromPlaceId: saved.data.days[1].activities[0].place.id, toPlaceId: first.place.id, status: 'unknown' });
+  await localApp.restart();
+  await localApp.request('/model/configure', 'POST', { base_url: 'https://fixture.invalid/v1', model: 'fixture-model', api_key: 'fixture-key-not-real' });
+  await page.reload();
+  await expect(page.locator('.startup-intro')).toHaveCount(0);
+  await expect(page.locator('.activity-heading')).toHaveCount(2);
+  expect((await trip.read()).data.days).toEqual(saved.data.days);
+  await page.getByLabel('旅行对话输入').fill('调整固定行程，保持身份');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续编辑草稿', exact: true })).toBeEnabled();
+  const edited = await trip.read();
+  expect(edited.data.draft.map((day: { activities: unknown[] }) => day.activities.length)).toEqual([2, 2]);
+  expect(edited.data.draft[1].activities.find((activity: { id: string }) => activity.id === first.id)).toMatchObject({ id: first.id, time: '12:15', cost: moved.cost, description: moved.description });
+  expect(edited.data.days).toEqual(saved.data.days);
+  await page.getByRole('button', { name: '继续编辑草稿', exact: true }).click();
+  await page.getByRole('button', { name: '放弃修改', exact: true }).click();
+  await page.getByRole('button', { name: '恢复上一版行程', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.days).toEqual(trip.formal.data.days);
+  expect((await trip.read()).data.candidates).toEqual(trip.formal.data.candidates);
+});
+
+test('跨日拖拽可移空源日并移入空日，960 窗口与键盘入口可用', async ({ page, localApp }) => {
+  await page.setViewportSize({ width: 960, height: 640 });
+  const trip = await setup(page, localApp, data => { data.days[0].activities = data.days[0].activities.slice(0, 1); data.days[1].activities = []; });
+  const first = trip.formal.data.days[0].activities[0];
+  await dragToDate(page, 0, 2);
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue('0');
+  await page.screenshot({ path: 'artifacts/c2-empty-day-960.png' });
+  await page.getByRole('button', { name: '移动到草稿', exact: true }).click();
+  await expect(page.locator('#drag-trip-activity-' + first.id)).toBeFocused();
+  let saved = await trip.read();
+  expect(saved.data.draft.map((day: { activities: unknown[] }) => day.activities.length)).toEqual([0, 1]);
+  await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  saved = await trip.read();
+  await localApp.restart(); await page.reload();
+  await page.getByRole('tab', { name: '第 1 天', exact: true }).click();
+  await expect(page.locator('.activity-heading')).toHaveCount(0);
+  await expect(page.locator('.real-map-marker')).toHaveCount(0);
+  expect((await trip.read()).data.days).toEqual(saved.data.days);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  await expect(page.locator('.editor-empty-day')).toContainText('自由安排');
+  await page.getByRole('dialog').getByRole('button', { name: '第 2 天', exact: true }).press('Enter');
+  await page.locator('#drag-trip-activity-' + first.id).press('Space');
+  await page.getByLabel('目标日期', { exact: true }).selectOption('1');
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue('0');
+  await page.getByRole('button', { name: '返回编辑', exact: true }).press('Enter');
+  await expect(page.locator('#drag-trip-activity-' + first.id)).toBeFocused();
+  await page.getByRole('button', { name: '放弃修改', exact: true }).click();
+  await page.getByRole('button', { name: '恢复上一版行程', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.days).toEqual(trip.formal.data.days);
+});
+
+for (const blocked of ['full', 'duplicate'] as const) test(`跨日目标 ${blocked} 不覆盖草稿，保持日期和位置可修改`, async ({ page, localApp }) => {
+  const trip = await setup(page, localApp, data => {
+    crossDays(data);
+    if (blocked === 'full') data.days[1].activities = Array.from({ length: 8 }, (_, index) => {
+      const activity = structuredClone(data.days[1].activities[0]);
+      activity.id = 'full-' + index; activity.time = `${String(index + 8).padStart(2, '0')}:00`;
+      activity.place!.id = 'baidu:full-' + index;
+      return activity;
+    });
+    else {
+      data.days[1].activities[0].place = structuredClone(data.days[0].activities[0].place);
+      data.days[1].activities[0].title = data.days[0].activities[0].title;
+    }
+  });
+  await dragToDate(page, 0, 2);
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue(blocked === 'full' ? '8' : '1');
+  const before = await trip.read();
+  if (blocked === 'full') {
+    await expect(page.getByRole('alert')).toContainText('已有 8 项活动');
+    await expect(page.getByRole('button', { name: '移动到草稿', exact: true })).toBeDisabled();
+  } else {
+    await page.getByLabel('移动后开始时间').fill('13:00');
+    await page.getByRole('button', { name: '移动到草稿', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText(/已安排|重复|已有/);
+  }
+  expect((await trip.read()).data).toEqual(before.data);
+  await page.getByLabel('目标日期', { exact: true }).selectOption('1');
+  await expect(page.getByRole('button', { name: '移动到草稿', exact: true })).toBeEnabled();
+});
+
+test('跨日时间与旧修订冲突保持表单，取消拖拽后可切换会话', async ({ page, localApp }) => {
+  const other = await localApp.request('/conversations', 'POST', { title: 'C2 切换后的独立会话', data: { schema: 1, days: [], draft: null, selectedDay: 1, messages: [], favorites: [] } });
+  const trip = await setup(page, localApp, crossDays);
+  await dragToDate(page, 0, 2);
+  const before = await trip.read();
+  for (const time of ['10:30', '23:30']) {
+    await page.getByLabel('移动后开始时间').fill(time);
+    await page.getByRole('button', { name: '移动到草稿', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText(/时间|重叠|午夜/);
+    expect((await trip.read()).data).toEqual(before.data);
+  }
+  const latest = await localApp.request('/conversations/' + trip.id, 'PUT', { expected_revision: before.revision, title: before.title, data: before.data });
+  await page.getByLabel('移动后开始时间').fill('12:00');
+  await page.getByRole('button', { name: '移动到草稿', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('会话已被更新');
+  await expect(page.getByLabel('目标日期', { exact: true })).toHaveValue('2');
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue('1');
+  expect((await trip.read()).revision).toBe(latest.revision);
+  await page.reload();
+  await page.getByRole('button', { name: '继续编辑草稿', exact: true }).click();
+  let calls = 0;
+  page.on('request', request => { if (request.url().endsWith('/trip/activities/move')) calls++; });
+  await hoverDate(page, 0, 2);
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  await expect(page.locator('.editor-day-drop-target')).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: '编辑当天行程', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.getByRole('button', { name: '历史旅行', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '历史旅行', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /C2 切换后的独立会话/ }).click();
+  await expect(page.locator('.trip-title')).toHaveText('C2 切换后的独立会话');
+  expect((await localApp.request('/conversations/' + other.id)).data.days).toEqual([]);
+  expect(calls).toBe(0);
   expect((await trip.read()).data.days).toEqual(trip.formal.data.days);
 });

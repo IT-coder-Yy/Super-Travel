@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 
-type Drag = { activityId: string; x: number; y: number; moving: boolean; beforeId?: string | null }
+type Drag = { activityId: string; x: number; y: number; moving: boolean; beforeId?: string | null; targetDay?: number }
 
-export function useActivityDrag(scope: string, disabled: boolean, onDrop: (activityId: string, beforeId: string | null) => void) {
+export function useActivityDrag(scope: string, disabled: boolean, onDrop: (activityId: string, beforeId: string | null, targetDay?: number) => void) {
   const listRef = useRef<HTMLFieldSetElement>(null)
   const cancelRef = useRef<(() => void) | null>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -19,6 +19,7 @@ export function useActivityDrag(scope: string, disabled: boolean, onDrop: (activ
     const startX = event.clientX, startY = event.clientY
     let x = startX, y = startY, moving = false, frame = 0
     let beforeId: string | null | undefined
+    let targetDay: number | undefined
     handle.focus()
     handle.setPointerCapture(pointerId)
     setDrag({ activityId, x, y, moving })
@@ -32,14 +33,19 @@ export function useActivityDrag(scope: string, disabled: boolean, onDrop: (activ
       const rows = [...list!.querySelectorAll<HTMLElement>('[data-activity-id]')]
       const remaining = rows.filter(row => row.dataset.activityId !== activityId)
       const first = rows[0]?.getBoundingClientRect(), last = rows.at(-1)?.getBoundingClientRect()
-      beforeId = undefined
-      if (inside && first && last && x >= first.left && x <= first.right && y >= first.top && y <= last.bottom) {
+      const dayTab = inside ? [...list!.querySelectorAll<HTMLButtonElement>('[data-drop-day]')].find(tab => {
+        const box = tab.getBoundingClientRect()
+        return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom
+      }) : undefined
+      targetDay = dayTab ? Number(dayTab.dataset.dropDay) : undefined
+      beforeId = dayTab ? null : undefined
+      if (!dayTab && inside && first && last && x >= first.left && x <= first.right && y >= first.top && y <= last.bottom) {
         const next = remaining.find(row => { const box = row.getBoundingClientRect(); return y < box.top + box.height / 2 })
         const position = next ? remaining.indexOf(next) : remaining.length
         if (position !== rows.findIndex(row => row.dataset.activityId === activityId)) beforeId = next?.dataset.activityId ?? null
       }
-      setDrag(previous => previous?.x === x && previous.y === y && previous.beforeId === beforeId && previous.moving === moving
-        ? previous : { activityId, x, y, moving, beforeId })
+      setDrag(previous => previous?.x === x && previous.y === y && previous.beforeId === beforeId && previous.targetDay === targetDay && previous.moving === moving
+        ? previous : { activityId, x, y, moving, beforeId, targetDay })
     }
     function tick() { update(true); frame = requestAnimationFrame(tick) }
     function move(event: globalThis.PointerEvent) {
@@ -59,7 +65,7 @@ export function useActivityDrag(scope: string, disabled: boolean, onDrop: (activ
       handle.removeEventListener('lostpointercapture', cancel)
       if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId)
       setDrag(null)
-      if (apply && moving && beforeId !== undefined) onDrop(activityId, beforeId)
+      if (apply && moving && beforeId !== undefined) onDrop(activityId, beforeId, targetDay)
     }
     function up(event: globalThis.PointerEvent) {
       if (event.pointerId !== pointerId) return
