@@ -7,7 +7,8 @@ export type ActivityDeletePreview = { revision: number; activity_id: string; tit
 export type TripMeta = { destination: string; summary: string; generatedAt: string; transportMode?: 'walking' | 'driving' | 'transit' | null }
 export type TransitSegment = { mode: 'walking' | 'bus' | 'subway' | 'other'; lineName?: string | null; departureStop?: string | null; arrivalStop?: string | null }
 export type TransitDetails = { segments: TransitSegment[]; transferCount?: number | null; fare?: { amountFen: number; currency: 'CNY' } | null }
-export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null; transit?: TransitDetails | null }
+export type TaxiEstimate = { amountFen: number; currency: 'CNY'; kind: 'estimate'; label?: string | null; note?: string | null }
+export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null; transit?: TransitDetails | null; taxiEstimates?: TaxiEstimate[] | null }
 export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
 export type Candidate = Omit<Activity, 'time' | 'x' | 'y' | 'incomingRoute' | 'place'> & { place: Place; destination: string }
 export type CandidatePlaceSelection = Pick<PlaceSelection, 'selection_id' | 'duration_minutes' | 'description'>
@@ -85,6 +86,12 @@ function validTransit(value: TransitDetails): boolean {
     (value.fare == null || Number.isSafeInteger(value.fare.amountFen) && value.fare.amountFen >= 0 && value.fare.amountFen <= 100000000 && value.fare.currency === 'CNY')
 }
 
+function validTaxi(value: TaxiEstimate[]): boolean {
+  const text = (item: unknown, limit: number) => item == null || typeof item === 'string' && item.trim().length > 0 && item.length <= limit
+  return Array.isArray(value) && value.length <= 8 && value.every(item => item && Number.isSafeInteger(item.amountFen) &&
+    item.amountFen >= 0 && item.amountFen <= 100000000 && item.currency === 'CNY' && item.kind === 'estimate' && text(item.label, 100) && text(item.note, 500))
+}
+
 function validRoute(route: TripRoute): boolean {
   return typeof route.fromPlaceId === 'string' && typeof route.toPlaceId === 'string' &&
     ['walking', 'driving', 'transit'].includes(route.mode) && ['verified', 'unknown'].includes(route.status) &&
@@ -93,7 +100,8 @@ function validRoute(route: TripRoute): boolean {
     (route.provider == null || ['baidu', 'amap'].includes(route.provider)) &&
     (route.queriedAt == null || typeof route.queriedAt === 'string') && (route.reason == null || typeof route.reason === 'string') &&
     (route.status !== 'verified' || route.durationMinutes != null) &&
-    (route.transit == null || route.mode === 'transit' && route.status === 'verified' && validTransit(route.transit))
+    (route.transit == null || route.mode === 'transit' && route.status === 'verified' && validTransit(route.transit)) &&
+    (route.taxiEstimates == null || route.mode !== 'walking' && route.status === 'verified' && validTaxi(route.taxiEstimates))
 }
 
 function validCandidates(value: unknown): value is Candidate[] {

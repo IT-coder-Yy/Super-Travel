@@ -70,7 +70,7 @@ def _first_route(result, provider, mode):
         except (TypeError, ValueError):
             continue
         if math.isfinite(seconds) and math.isfinite(distance) and 0 < seconds <= 172800 and 0 <= distance <= 3000000:
-            return path, (math.ceil(seconds / 60), math.ceil(distance))
+            return path, (math.ceil(seconds / 60), math.ceil(distance)), root
     return None
 
 
@@ -93,6 +93,26 @@ def _fare(value):
     except InvalidOperation:
         pass
     return None
+
+
+def _taxi_estimates(root, provider):
+    taxi = root.get("taxi") if provider == "baidu" else None
+    detail = taxi.get("detail") if isinstance(taxi, dict) else None
+    rows = detail if provider == "baidu" else [{"total_price": root.get("taxi_cost")}]
+    if not isinstance(rows, list) or len(rows) > 8:
+        return []
+    estimates = []
+    for row in rows:
+        fare = _fare(row.get("total_price")) if isinstance(row, dict) else None
+        if fare is None:
+            continue
+        estimate = {**fare, "kind": "estimate"}
+        for key, value, limit in (("label", row.get("desc"), 100),
+                                  ("note", taxi.get("remark") if isinstance(taxi, dict) else None, 500)):
+            if isinstance(value, str) and 0 < len(value.strip()) <= limit:
+                estimate[key] = value.strip()
+        estimates.append(estimate)
+    return estimates
 
 
 def _ride(mode, name, departure, arrival):
@@ -196,7 +216,9 @@ async def query_route(tools, origin, destination, mode, city):
     except Exception:
         route["reason"] = "路线服务参数或响应不兼容，交通耗时未知。"
         return route
-    path, metrics = selected
+    path, metrics, root = selected
+    if mode in ("transit", "driving"):
+        route["taxiEstimates"] = _taxi_estimates(root, provider)
     if mode == "transit":
         route["transit"] = _transit_details(path, provider)
     return {**route, "status": "verified", "provider": provider, "durationMinutes": metrics[0], "distanceMeters": metrics[1], "reason": "查询时的路线估算，不是出行当天的交通保证。"}

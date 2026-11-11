@@ -97,7 +97,9 @@ def transit_itinerary(price=29):
     result = itinerary()
     result["trip"]["transportMode"] = "transit"
     route = result["days"][0]["activities"][1]["incomingRoute"]
-    route.update(mode="transit", transit=_transit_details(baidu_path(price), "baidu"))
+    route.update(mode="transit", transit=_transit_details(baidu_path(price), "baidu"),
+                 taxiEstimates=[{"amountFen": 3900, "currency": "CNY", "kind": "estimate", "label": "白天", "note": "计价备注" * 60},
+                                {"amountFen": 4629, "currency": "CNY", "kind": "estimate", "label": "夜间"}])
     return result
 
 
@@ -165,7 +167,7 @@ def test_markdown_pdf_share_formal_transit_details_and_keep_budget(app, monkeypa
             assert "是否免费待确认" not in output
             if price is not None:
                 assert compact(phrase + "（仅供参考，以实际结果为准）") in compact(output)
-        for expected in (phrase, "地铁1号线", "净寺站", "¥12.34", "交通参考价不计入活动费用小计"):
+        for expected in (phrase, "地铁1号线", "净寺站", "¥12.34", "交通参考价不计入活动费用小计", "白天", "约 ¥39.00", "夜间", "约 ¥46.29", "不与公交票价相加"):
             assert compact(expected) in pdf_text
         assert file_state(app.state.store.root) == before
 
@@ -179,7 +181,7 @@ def test_old_or_mismatched_details_are_not_exported(app, bad):
     else: real["trip"]["transportMode"] = "walking"
     with TestClient(app) as client:
         result = export(client, saved(client, real)).json()["markdown"]
-        assert "¥29.00" not in result and "地铁1号线" not in result and "待确认" in result
+        assert "¥29.00" not in result and "¥39.00" not in result and "地铁1号线" not in result and "待确认" in result
 
 
 def test_changed_place_clears_entire_details_and_legacy_missing_details_is_valid():
@@ -205,7 +207,8 @@ def test_candidate_insert_keeps_new_transit_evidence_in_both_adjacent_legs(app, 
     from .test_trip_mutations import document, post
     async def query(tools, origin, target, mode, city):
         return {"fromPlaceId": origin["id"], "toPlaceId": target["id"], "mode": mode, "status": "verified", "durationMinutes": 13,
-                "distanceMeters": 500, "provider": "baidu", "queriedAt": datetime.now(timezone.utc).isoformat(), "transit": _transit_details(baidu_path(), "baidu")}
+                "distanceMeters": 500, "provider": "baidu", "queriedAt": datetime.now(timezone.utc).isoformat(), "transit": _transit_details(baidu_path(), "baidu"),
+                "taxiEstimates": [{"amountFen": 3900, "currency": "CNY", "kind": "estimate"}]}
     monkeypatch.setattr(candidates, "query_route", query)
     def use_transit(data):
         data["trip"]["transportMode"] = "transit"
@@ -220,6 +223,7 @@ def test_candidate_insert_keeps_new_transit_evidence_in_both_adjacent_legs(app, 
         assert response.status_code == 200, response.text
         items = response.json()["data"]["draft"][0]["activities"]
         assert items[1]["incomingRoute"]["transit"] == items[2]["incomingRoute"]["transit"] == _transit_details(baidu_path(), "baidu")
+        assert items[1]["incomingRoute"]["taxiEstimates"] == items[2]["incomingRoute"]["taxiEstimates"] == [{"amountFen": 3900, "currency": "CNY", "kind": "estimate"}]
         assert items[1]["cost"]["amountFen"] == 2500
         applied = post(client, response.json(), "apply")
         assert applied.status_code == 200, applied.text

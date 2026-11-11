@@ -60,8 +60,19 @@ def _transit(details):
             lines.append(f"{_plain(segment.get('lineName') or '线路待确认')}：{_plain(segment.get('departureStop') or '上车站待确认')} 上车 → {_plain(segment.get('arrivalStop') or '下车站待确认')} 下车")
     if not details["segments"]:
         lines.append("公交分段详情待确认")
-    lines.append("供应商首方案，仅供出行参考；交通参考价不计入活动费用小计。")
+    lines.append("供应商首方案，仅供出行参考；交通参考价不计入活动费用小计")
     return "；".join(lines) + "。"
+
+
+def _taxi(estimates):
+    if estimates is None:
+        return "出租车参考价未查询。"
+    if not estimates:
+        return "本次查询暂无可用出租车估算。"
+    lines = [f"出租车参考价（{_plain(item.get('label') or '时段未注明')}）：约 {_money(item['amountFen'])}（仅供参考，以实际结果为准）；"
+             + _plain(item.get('note') or '供应商未提供计价条件，请出发前确认。') for item in estimates]
+    lines.append("出租车为另一种出行选择，估算不是订单报价，不与公交票价相加，也不计入活动费用小计。")
+    return "\n".join(lines)
 
 
 def _route(previous, activity, mode):
@@ -83,7 +94,8 @@ def _route(previous, activity, mode):
         return f"未知 / 待确认；路线记录已过期或查询时间无效，不能作为当前已核验接驳。{evidence}"
     return (f"已查询估算：{MODES[route['mode']]}约 {route['durationMinutes']} 分钟，"
             f"{route['distanceMeters']} 米。{evidence}"
-            + ("\n" + _transit(route.get("transit")) if route["mode"] == "transit" else ""))
+            + ("\n" + _transit(route.get("transit")) if route["mode"] == "transit" else "")
+            + ("\n" + _taxi(route.get("taxiEstimates")) if route["mode"] != "walking" else ""))
 
 
 def export_blocks(days, trip, revision):

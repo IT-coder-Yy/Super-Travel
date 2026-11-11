@@ -28,6 +28,7 @@ export function routeDetails(previous: Activity | undefined, activity: Activity,
   const queried = route.queriedAt ? new Date(route.queriedAt).toLocaleString('zh-CN') : ''
   return { text: `${modes[route.mode]}约 ${route.durationMinutes} 分钟${route.distanceMeters == null ? '' : ` · ${(route.distanceMeters / 1000).toFixed(1)} 公里`}`,
     transit: route.mode === 'transit' ? route.transit ?? null : undefined,
+    taxiEstimates: route.mode !== 'walking' ? route.taxiEstimates ?? null : undefined,
     conflict, detail: `${route.provider === 'baidu' ? '百度地图' : route.provider === 'amap' ? '高德地图' : '地图查询'}${queried ? ` · ${queried}` : ''}；耗时为查询估计。` }
 }
 
