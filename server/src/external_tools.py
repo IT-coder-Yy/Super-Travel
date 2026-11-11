@@ -120,7 +120,9 @@ class ExternalTools:
                 continue
             if provider == "amap" and isinstance(self.clients[provider], AmapTools):
                 state.update(connection="connected" if self.clients[provider].mcp_connected else "unchecked",
-                             message="地点和步行、驾车、公交算路使用高德官方 API，其余工具使用 MCP。目录可用不代表查询成功。")
+                             message=("地点和步行、驾车、公交算路使用高德官方 API，其余工具使用 MCP。目录可用不代表查询成功。"
+                                      if self.clients[provider].mcp_connected else
+                                      "已保留高德基础地图 API；MCP 工具清单未连接：" + (self.clients[provider].mcp_error or "暂不可用。") + " 可重新测试连接。"))
             elif provider in ("serper", "xhs"):
                 state["message"] = "公开搜索索引，不包含登录后笔记内容。" if provider == "xhs" else "通过官方 Serper 接口搜索公开网页，实际可用性见最近调用。"
             else:

@@ -113,3 +113,70 @@ def test_other_amap_tools_still_use_mcp(monkeypatch):
     monkeypatch.setattr(McpClient, "call_tool", call)
     asyncio.run(AmapTools("fixture-key").call_tool("maps_weather", {"city": "杭州"}))
     assert seen == [("maps_weather", {"city": "杭州"})]
+
+
+@pytest.mark.parametrize("code", ["tool_connection", "tool_timeout"])
+def test_mcp_discovery_retries_transient_failure_once_and_recovers(monkeypatch, code):
+    calls = []
+    async def intermittent(_self):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ToolError(code, True, "临时连接失败")
+        return [{"name": "maps_weather"}]
+    monkeypatch.setattr(McpClient, "list_tools", intermittent)
+    tools = AmapTools("fixture-key")
+    catalog = asyncio.run(tools.list_tools())
+    assert len(calls) == 2 and len(catalog) == 5 and tools.mcp_connected and tools.mcp_error is None
+
+
+@pytest.mark.parametrize("code", ["tool_auth", "tool_quota", "tool_protocol", "tool_service"])
+def test_mcp_discovery_does_not_retry_nonconnection_errors_and_reports_degradation(monkeypatch, code):
+    calls = []
+    async def failed(_self):
+        calls.append(1)
+        raise ToolError(code, True, "已脱敏的失败原因")
+    monkeypatch.setattr(McpClient, "list_tools", failed)
+    service = ExternalTools({"AMAP_MAPS_API_KEY": "fixture-key"})
+    catalog = asyncio.run(service.list_tools())
+    assert len(calls) == 1 and len(catalog) == 4
+    status = next(item for item in service.status() if item["id"] == "amap")
+    assert "基础地图 API" in status["message"] and "MCP 工具清单未连接" in status["message"]
+    assert status["connection"] == "unchecked"
+
+
+def test_discovery_timeout_retries_but_caller_cancellation_does_not(monkeypatch):
+    calls = []
+    async def slow(_self):
+        calls.append(1)
+        if len(calls) == 1: await asyncio.Event().wait()
+        return [{"name": "maps_weather"}]
+    monkeypatch.setattr(McpClient, "list_tools", slow)
+    tools = AmapTools("fixture-key")
+    tools.timeout = 0.04
+    async def run():
+        assert len(await tools.list_tools()) == 5 and len(calls) == 2
+        calls.clear()
+        task = asyncio.create_task(tools.list_tools())
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError): await task
+        assert len(calls) == 1
+    asyncio.run(run())
+
+
+def test_explicit_refresh_recovers_mcp_catalog_after_bounded_failure(monkeypatch):
+    calls = []
+    async def returns_later(_self):
+        calls.append(1)
+        if len(calls) <= 2: raise ToolError("tool_connection", True, "临时网络错误")
+        return [{"name": "maps_weather"}]
+    monkeypatch.setattr(McpClient, "list_tools", returns_later)
+    service = ExternalTools({"AMAP_MAPS_API_KEY": "fixture-key"})
+    async def run():
+        assert len(await service.list_tools()) == 4 and len(calls) == 2
+        assert len(await service.list_tools()) == 4 and len(calls) == 2
+        refreshed = await service.refresh()
+        assert len(calls) == 3 and refreshed["toolCount"] == 5
+        status = next(item for item in refreshed["providers"] if item["id"] == "amap")
+        assert status["connection"] == "connected" and "未连接" not in status["message"]
+    asyncio.run(run())

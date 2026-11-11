@@ -30,14 +30,24 @@ class AmapTools(McpClient):
     def __init__(self, api_key: str, *, transport=None):
         super().__init__("https://mcp.amap.com/mcp", auth_query={"key": api_key})
         self._api_key, self._transport, self.mcp_connected = api_key, transport, False
+        self.mcp_error = None
 
     async def list_tools(self):
-        # REST essentials remain available even if MCP discovery fails or its quota is exhausted.
-        try:
-            others = await super().list_tools()
-            self.mcp_connected = True
-        except ToolError:
-            others, self.mcp_connected = [], False
+        others, self.mcp_connected, self.mcp_error = [], False, None
+        # Retry transient discovery once within the existing timeout budget; never retry a paid tool call here.
+        for attempt in range(2):
+            try:
+                async with asyncio.timeout(self.timeout / 2):
+                    others = await super().list_tools()
+                self.mcp_connected, self.mcp_error = True, None
+                break
+            except TimeoutError:
+                failure = ToolError("tool_timeout", True, "高德 MCP 工具清单查询超时。")
+            except ToolError as error:
+                failure = error
+            self.mcp_error = failure.message
+            if attempt or not failure.retryable or failure.code not in ("tool_timeout", "tool_connection"):
+                break
         return deepcopy(TOOLS) + [tool for tool in others if tool["name"] not in ROUTES]
 
     async def call_tool(self, name, arguments):

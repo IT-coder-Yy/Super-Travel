@@ -86,6 +86,8 @@ node --test server/scripts/tools-dev.test.mjs
 
 后端测试入口会先准备 PDF 资源，再运行 `server/tests/` 和 `client/tests/native/`。PyInstaller 在临时构建目录中按逻辑包名组织源码，将资源收进 `supertravel_server/assets/`；正式构建和原生验收共用冻结函数，源码仍保持扁平目录。桌面构建入口为 `npm run desktop:build`，详见[客户端说明](../client/README.md)。
 
+高德 MCP 清单遇到连接或超时失败时，在原超时预算内最多重试一次；不自动重试业务调用。最终失败保留基础地图 API，并在工具状态中显示 MCP 故障，清单沿用工具服务既有的 5 分钟缓存；缓存到期后重新测试连接会重新发现。
+
 ## 公交方案记录
 
 `incomingRoute.transit` 是可选字段，包含首方案 `segments`（`mode`、可选 `lineName` / `departureStop` / `arrivalStop`）、可选 `transferCount` 和 `fare`（整数 `amountFen`、`currency: CNY`）。百度读取 `routes[0].price`，高德读取 `transits[0].cost`；只取同一方案的分段，每组可替代线路仅取第一条，不累加分段票价。有效总票价（含 0）在界面和导出原样展示，并注明“仅供参考，以实际结果为准”；缺失值仍显示未知，有效耗时仍保留。
