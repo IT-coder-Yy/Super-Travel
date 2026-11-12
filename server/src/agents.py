@@ -82,6 +82,7 @@ PLANNER_PROMPT = """你是旅行规划 Agent。必须调用 route_request 返回
 answer、clarification、progress 必须填写 trip=null、steps=[]；即使已经知道目的地和天数，也只能在 content 中复述，不能把已知信息填入 trip。
 必须提取用户的明确限制：指定每天地点数量时填写 trip.stops_per_day；例如“杭州1天，3个不同景点”须为3，不能擅自增加午餐地点。
 已有行程续改以本次 request 和 current_trip 的最新快照为准；手动跨日移动、增删后的安排覆盖历史生成时的每天数量，不能为了旧数量补删活动。本次未重新要求每天数量时，trip.stops_per_day=null，steps 也不能沿用旧数量；本次明确要求数量时须填写 stops_per_day_evidence，逐字引用本次 request 中的依据。无法确定本次要求时澄清，不从历史或已结束任务恢复数量限制。
+当前活动以 current_trip.days[].activities 为唯一依据，旧标题、副标题、摘要和历史消息可能未随手动编辑更新，不能据此补回活动。仅调整已有活动时间且资料足够时，用一个步骤核对时间并提交草稿即可，不必拆成整理、修改、提交多个步骤。
 用户明确只用百度或高德时填写 trip.map_provider=baidu或amap；若未限定则为null，不可把“只用百度”理解为优先百度。
 普通单城1～7天行程生成的基础必需信息只有目的地和天数；先从当前真实行程与对话沿用已知项，只追问仍缺的项，不重复确认。预算、节奏、饮食、同行人数/方式、出行日期、活动间交通方式、每天地点数量、地图供应商限制均为可选，未填写不能一律阻塞生成；未核验的营业、预约、费用和交通等诚实标记待确认。用户明确限制有冲突或超出支持范围时，只针对具体问题澄清。
 “本次不用默认偏好”仅表示忽略常用偏好，不要求重新收集全部可选条件。
@@ -114,6 +115,8 @@ trip_request.map_provider 非空时仅使用其指定地图，额度不足也不
 确定活动顺序后，用 query_trip_route 查询每天相邻地点间交通，mode须为trip_request.transport_mode；仅传place_id，不传或转换坐标。已有相同地点/方式的有效结果可复用。
 路线status=unknown代表未核实，须在行程中保留未知项，不编造耗时或反复请求同一失败路线。已知耗时要留足接驳时间；不足时修订时间或用report_plan_issue反馈冲突。
 修改行程时保留未要求改变的安排。提交已有活动必须把 current_trip 中的 id 填入 activity_id，跨日移动也不变；同一 POI 不同天的活动各自有独立 id，不能混用，不能重复引用或把旧 id 绑定到另一个 place_id。新增活动不填 activity_id。
+当前活动仅以 current_trip.days[].activities 为准；旧标题、副标题、摘要、历史消息或 available_places 中出现的地点都不代表当前日程含有该活动，不得据此恢复已移动或删除的活动。
+已有活动和候选的 cost 是用户填写的费用，由服务端按 activity_id 原样保留；submit_trip 不接收 cost，不要添加该字段或因 schema 没有它而反馈阻塞，也不把交通参考价写成活动费用。
 既有 description 可能是用户备注，普通时间/时长/日期/顺序调整保持 replace_description=false；只有用户明确要求修改该活动备注才设为 true，并在 description 提交新内容。不要将自己的润色当作用户改备注要求。
 首次生成每天至少一个活动；修改已有行程可保留 activities=[] 的自由安排日，但整程至少保留一个活动。时间与停留时长是建议，未核实的费用/营业/预约须注明待确认。
 is_final_step=false 表示非最终步骤：有足够资料时整理当前结果并返回文字即可；submit_trip 按计划暂不提供，不能仅因缺少它就报告计划缺陷或提前提交。真实资料不足、时间冲突或其他执行问题仍应使用 report_plan_issue 反馈。
@@ -260,6 +263,13 @@ class AgentSession:
                 travel_preferences=travel_preferences, preference_application=preference_application,
                 planning_feedback=f"上次偏好采用声明未通过校验：{reason}。请重新返回完整规划，逐字段遵守偏好规则；引用必须来自所标注的 request 或 user 历史逐字原文，不能引用助手摘要。保持本次要求、已确认条件和未覆盖的默认偏好，不能为通过校验改写用户条件；若已有 preference_application 则原样保留。信息足够就直接规划，确有冲突才澄清。")
 
+        async def correct_structure(reason):
+            if planning_feedback is not None:
+                raise ModelError("agent_plan", "规划结果不完整，自动纠正后仍未通过，请重新发送需求。") from None
+            return await self._route(text, history, failure=failure, trip_context=trip_context,
+                travel_preferences=travel_preferences, preference_application=preference_application,
+                planning_feedback=f"上次规划返回协议未通过校验：{reason}。请按 route_request 的 schema 重新返回完整、简洁的决策，只调用一次该工具。保持本次要求、最新活动列表、已确认条件和偏好，不得为通过校验改写条件。")
+
         reply = await self.model.chat([
             {"role": "system", "content": PLANNER_PROMPT + (PREFERENCE_RULES if travel_preferences is not None else "")},
             *history,
@@ -268,21 +278,21 @@ class AgentSession:
         try:
             calls = reply.message.tool_calls or []
             if reply.finish_reason == "length" or len(calls) != 1 or calls[0].function.name != "route_request":
-                raise ValueError
+                raise ValueError("返回被截断，或没有恰好调用一次 route_request")
             route = Route.model_validate_json(calls[0].function.arguments)
             if route.kind == "plan" and (not route.steps or any(not step.strip() or len(step) > 1000 for step in route.steps)):
-                raise ValueError
+                raise ValueError("plan 必须有非空步骤，每步不超过1000字")
             if route.trip is not None and route.kind != "plan":
-                raise ValueError
+                raise ValueError("非 plan 决策的 trip 必须为 null")
         except ValidationError as error:
             errors = error.errors(include_input=False, include_context=False)
             if travel_preferences is not None and all(item["loc"] and item["loc"][0] == "preference_application" for item in errors):
                 field = errors[0]["loc"][1] if len(errors[0]["loc"]) > 1 else None
                 label = PREFERENCE_LABELS.get(field, "偏好采用结果")
                 return await correct_preferences(f"{label}：字段类型、取值或结构不符合要求")
-            raise ModelError("agent_plan", "规划结果不完整，请重新发送需求。") from None
-        except ValueError:
-            raise ModelError("agent_plan", "规划结果不完整，请重新发送需求。") from None
+            return await correct_structure(json.dumps([{key: item[key] for key in ("loc", "type")} for item in errors[:3]], ensure_ascii=False))
+        except ValueError as error:
+            return await correct_structure(str(error))
         if trip_context and trip_context.get("trip") and route.trip and route.trip.stops_per_day is not None:
             quote = route.stops_per_day_evidence
             # Quotes establish current-request provenance, not proof of natural-language meaning.
@@ -470,7 +480,11 @@ class AgentSession:
                                                for item in (trip_context or {}).get("candidates", [])], conversation=(history or [])[-8:])
         if travel_preferences is not None:
             context.update(travel_preferences=_model_preferences(travel_preferences), conversation=(history or [])[-40:], preference_summary=self._state.get("preference_summary"), preference_application=preference_application)
-        messages = [{"role": "system", "content": EXECUTOR_PROMPT + (PREFERENCE_RULES if travel_preferences is not None else "")}, {"role": "user", "content": json.dumps(context, ensure_ascii=False)}]
+        phase = ""
+        if research:
+            phase = ("\n当前步骤是最终提交：核对最新活动列表和时间后，调用本轮 submit_trip 提交完整行程；已有 cost 由服务端保留，无需提交。" if final else
+                     "\n当前步骤仅查询或整理：只完成 step 并以文字返回结果；用户要求生成草稿是整项任务目标，将由后续最终步骤提交。本步没有 submit_trip 是正常分工，不能据此反馈阻塞；真实缺项或冲突仍须反馈。")
+        messages = [{"role": "system", "content": EXECUTOR_PROMPT + (PREFERENCE_RULES if travel_preferences is not None else "") + phase}, {"role": "user", "content": json.dumps(context, ensure_ascii=False)}]
         # Completed steps only enter results after a successful tool response exists.
         has_tool_result = bool(results) or bool(research and (research.places or research.candidates))
         while True:

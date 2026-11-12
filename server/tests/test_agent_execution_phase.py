@@ -10,6 +10,11 @@ from .test_agents import FakeModel, finish, reply, session_for
 from .test_preference_agents import DEFAULTS, MODEL_DEFAULTS, applied, user_value
 from .test_trips import Maps, submitted, trip_route
 from supertravel_server.trips import TripRequest, TripResearch
+from supertravel_server.agent_service import SendMessage
+from supertravel_server.conversations import ConversationInput
+from uuid import uuid4
+from .test_trip_api import app
+from .test_trip_identity import existing_trip, submission
 
 
 def test_query_then_text_arrangement_then_final_submission_keeps_phase_and_schema():
@@ -71,4 +76,44 @@ def test_phase_does_not_allow_early_or_guessed_submission_and_preserves_real_fee
         assert json.loads(model.executor_calls[0][1]["content"])["is_final_step"] is final
         assert len(tools.calls) == 1
         await session.aclose()
+    asyncio.run(run())
+
+
+def test_continuation_corrects_plan_and_keeps_user_fields_in_unapplied_draft(app):
+    async def run():
+        original = existing_trip()
+        original["days"][1]["activities"][0]["description"] = "正式备注：𠮷 🚕"
+        original["days"][1]["activities"][0]["cost"]["amountFen"] = 1250
+        planned = submission(original, identifiers=True)
+        planned["days"][1]["activities"][0]["time"] = "11:15"
+        phases = []
+        def execute(messages):
+            context = json.loads(messages[1]["content"])
+            phases.append(context["is_final_step"])
+            assert context["current_trip"] == original
+            assert "cost 是用户填写的费用，由服务端按 activity_id 原样保留" in messages[0]["content"]
+            if context["is_final_step"]:
+                assert "当前步骤是最终提交" in messages[0]["content"]
+                return reply(name="submit_trip", arguments=planned)
+            assert "当前步骤仅查询或整理" in messages[0]["content"]
+            return reply("已有真实地点；只调整时间，现有费用由服务端保留。")
+        model = FakeModel([reply(name="route_request", arguments={"kind": "plan"}),
+            trip_route(days=2, steps=["核对时间和保留字段", "提交修改草稿"])], execute)
+        service, store = app.state.agents, app.state.store
+        service.model, service.tools = model, Maps()
+        document = store.create(ConversationInput(title="续改回归", data={"schema": 1, "messages": [], "days": [], "draft": None}))
+        store.mutate(document.id, lambda data: data.update(deepcopy(original)))
+        await service.send(document.id, SendMessage(message_id=uuid4(), content="只把第二天开始时间延后15分钟，其余不变，生成草稿"))
+        await service.turns[document.id]
+        state = await finish(service.sessions[document.id])
+        data = store.get(document.id).data
+        assert state["status"] == "completed" and state["replans"] == 0
+        assert len(model.planner_calls) == 2 and phases == [False, True] and not service.tools.calls
+        assert data["days"] == original["days"] and data["trip"] == original["trip"]
+        for before, after in zip(original["days"], data["draft"]):
+            before, after = before["activities"][0], after["activities"][0]
+            for key in ("id", "description", "cost", "place"):
+                assert before[key] == after[key]
+        assert data["draft"][1]["activities"][0]["time"] == "11:15"
+        await service.stop()
     asyncio.run(run())
