@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
+import { isWorkspaceData } from '../../src/types';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
 
 test.use({ reducedMotion: 'reduce' });
@@ -164,4 +165,45 @@ test('出租车估算兼容旧记录、空结果和驾车，过期证据不显�
   await expect(taxi).toHaveCount(0);
   await expect(page.locator('.activities .trip-leg')).toContainText('已过期');
   await expect(page.getByLabel('行程费用')).toContainText('¥25.00');
+});
+
+
+test('交通文本按码点校验，边界 emoji 和罕字可保存、重启及恢复', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  const doc = await trip.read();
+  const route = doc.data.days[0].activities[1].incomingRoute;
+  const estimate = route.taxiEstimates[0], segment = route.transit.segments[1];
+  for (const [record, field, limit, ending] of [
+    [estimate, 'note', 500, '🚕'], [estimate, 'label', 100, '🚕'],
+    [segment, 'lineName', 200, '🚇'], [segment, 'departureStop', 200, '𠮷'], [segment, 'arrivalStop', 200, '🚉'],
+  ] as const) {
+    for (const [length, accepted] of [[limit - 2, true], [limit - 1, true], [limit, false]] as const) {
+      record[field] = '计'.repeat(length) + ending;
+      expect(isWorkspaceData(doc.data), `${field}: ${length} 个汉字 + ${ending}`).toBe(accepted);
+    }
+    record[field] = '计'.repeat(limit - 1) + ending;
+  }
+  estimate.note = '计'.repeat(493) + '👨‍👩‍👧‍👦';
+  expect(isWorkspaceData(doc.data)).toBe(true);
+  estimate.note = '计'.repeat(494) + '👨‍👩‍👧‍👦';
+  expect(isWorkspaceData(doc.data)).toBe(false);
+  estimate.note = '计'.repeat(499) + '🚕';
+  await writeFile(trip.path, JSON.stringify(doc), 'utf8');
+  await page.reload();
+  await expect(page.locator('.trip-title')).toHaveText('公交详情离线验收');
+  await page.locator('.activities .taxi-details summary').click();
+  await expect(page.locator('.activities .taxi-details')).toContainText(estimate.note);
+  await page.locator('.activities .transit-details summary').click();
+  await expect(page.locator('.activities .transit-details')).toContainText(segment.departureStop);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect((await trip.read()).data.days[0].activities[1].incomingRoute).toEqual(route);
+  await localApp.restart();
+  await page.reload();
+  await expect(page.locator('.trip-title')).toHaveText('公交详情离线验收');
+  const revision = (await trip.read()).revision;
+  await page.getByRole('button', { name: '恢复上一版行程', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).revision).toBeGreaterThan(revision);
+  expect((await trip.read()).data.days[0].activities[1].incomingRoute).toEqual(route);
 });

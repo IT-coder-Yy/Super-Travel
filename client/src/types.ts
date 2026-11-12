@@ -79,7 +79,7 @@ function validDays(value: unknown): value is TripDay[] {
 }
 
 function validTransit(value: TransitDetails): boolean {
-  const text = (item: unknown) => item == null || typeof item === 'string' && item.trim().length > 0 && item.length <= 200
+  const text = (item: unknown) => item == null || typeof item === 'string' && item.trim().length > 0 && [...item].length <= 200
   return Array.isArray(value.segments) && value.segments.length <= 64 && value.segments.every(segment => segment &&
     ['walking', 'bus', 'subway', 'other'].includes(segment.mode) && text(segment.lineName) && text(segment.departureStop) && text(segment.arrivalStop)) &&
     (value.transferCount == null || Number.isSafeInteger(value.transferCount) && value.transferCount >= 0 && value.transferCount <= 63) &&
@@ -87,7 +87,7 @@ function validTransit(value: TransitDetails): boolean {
 }
 
 function validTaxi(value: TaxiEstimate[]): boolean {
-  const text = (item: unknown, limit: number) => item == null || typeof item === 'string' && item.trim().length > 0 && item.length <= limit
+  const text = (item: unknown, limit: number) => item == null || typeof item === 'string' && item.trim().length > 0 && [...item].length <= limit
   return Array.isArray(value) && value.length <= 8 && value.every(item => item && Number.isSafeInteger(item.amountFen) &&
     item.amountFen >= 0 && item.amountFen <= 100000000 && item.currency === 'CNY' && item.kind === 'estimate' && text(item.label, 100) && text(item.note, 500))
 }
