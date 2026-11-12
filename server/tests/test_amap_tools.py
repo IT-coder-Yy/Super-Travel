@@ -1,9 +1,15 @@
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import logging
 
 import httpx2
 import pytest
+from mcp import Client as SDKClient
+from mcp.server import Server
+from mcp.types import ListToolsResult, Tool
+
+from supertravel_server import mcp_client
 
 from supertravel_server.amap_tools import AmapTools, TOOLS
 from supertravel_server.external_tools import ExternalTools
@@ -144,17 +150,17 @@ def test_mcp_discovery_does_not_retry_nonconnection_errors_and_reports_degradati
     assert status["connection"] == "unchecked"
 
 
-def test_discovery_timeout_retries_but_caller_cancellation_does_not(monkeypatch):
+def test_exhausted_discovery_budget_and_caller_cancellation_do_not_retry(monkeypatch):
     calls = []
     async def slow(_self):
         calls.append(1)
-        if len(calls) == 1: await asyncio.Event().wait()
-        return [{"name": "maps_weather"}]
+        await asyncio.Event().wait()
     monkeypatch.setattr(McpClient, "list_tools", slow)
     tools = AmapTools("fixture-key")
     tools.timeout = 0.04
     async def run():
-        assert len(await tools.list_tools()) == 5 and len(calls) == 2
+        assert await tools.list_tools() == TOOLS and len(calls) == 1
+        assert not tools.mcp_connected and tools.mcp_error
         calls.clear()
         task = asyncio.create_task(tools.list_tools())
         await asyncio.sleep(0)
@@ -180,3 +186,33 @@ def test_explicit_refresh_recovers_mcp_catalog_after_bounded_failure(monkeypatch
         status = next(item for item in refreshed["providers"] if item["id"] == "amap")
         assert status["connection"] == "connected" and "未连接" not in status["message"]
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("fail_first,delay,available", [(False, 0.65, True), (True, 0.65, True), (True, 0.9, False)])
+def test_real_sdk_discovery_keeps_success_window_and_shares_retry_budget(monkeypatch, fail_first, delay, available):
+    attempts, completed = [], []
+    async def list_tools(ctx, params):
+        await asyncio.sleep(delay)
+        completed.append(True)
+        return ListToolsResult(tools=[Tool(name="maps_weather", input_schema={"type": "object"})])
+    server = Server("amap-discovery-budget", on_list_tools=list_tools)
+    @asynccontextmanager
+    async def connect(*args, **kwargs):
+        attempts.append(True)
+        if fail_first and len(attempts) == 1:
+            await asyncio.sleep(0.2)
+            raise ToolError("tool_connection", True, "固定测试：临时连接失败")
+        async with SDKClient(server, read_timeout_seconds=kwargs["read_timeout_seconds"]) as client:
+            yield client
+    async def unexpected_http(*args, **kwargs):
+        pytest.fail("The real SDK fixture must stay in memory without external HTTP")
+    monkeypatch.setattr(mcp_client, "Client", connect)
+    monkeypatch.setattr(httpx2.AsyncClient, "send", unexpected_http)
+    tools = AmapTools("fixture-key")
+    tools.timeout = 1
+    catalog = asyncio.run(tools.list_tools())
+    assert any(tool["name"] == "maps_weather" for tool in catalog) is available
+    assert len(attempts) == (2 if fail_first else 1)
+    assert completed == ([True] if available else [])
+    assert tools.mcp_connected is available
+    assert (tools.mcp_error is None) is available

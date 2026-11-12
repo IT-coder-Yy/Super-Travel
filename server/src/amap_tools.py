@@ -35,9 +35,14 @@ class AmapTools(McpClient):
     async def list_tools(self):
         others, self.mcp_connected, self.mcp_error = [], False, None
         # Retry transient discovery once within the existing timeout budget; never retry a paid tool call here.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.timeout
         for attempt in range(2):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
             try:
-                async with asyncio.timeout(self.timeout / 2):
+                async with asyncio.timeout(remaining):
                     others = await super().list_tools()
                 self.mcp_connected, self.mcp_error = True, None
                 break
