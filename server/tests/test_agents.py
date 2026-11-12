@@ -603,13 +603,46 @@ def test_nonplan_trip_is_rejected_even_when_destination_and_days_are_known(kind)
     async def run():
         invalid = reply(name="route_request", arguments={"kind": kind, "content": "先确认必要条件。", "steps": [],
                                                         "trip": {"destination": "杭州", "days": 2}})
-        model, tools = FakeModel([invalid]), FakeTools()
+        model, tools = FakeModel([invalid, invalid]), FakeTools()
         session, events = session_for(model, tools)
         with pytest.raises(ModelError) as error:
             await session.chat("生成杭州2天行程，本次不用默认偏好，先就必要缺项澄清")
         assert error.value.code == "agent_plan"
-        assert len(model.planner_calls) == 1 and not model.executor_calls
+        assert len(model.planner_calls) == 2 and not model.executor_calls
         assert tools.listed == 0 and not tools.calls and not events
         assert session.snapshot()["status"] == "idle" and session._task is None
         await session.aclose()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("bad", [
+    reply("未调用规划工具"),
+    reply(name="wrong_tool", arguments={}),
+    reply(name="route_request", arguments={"kind": "plan", "content": "缺少步骤"}),
+    reply(name="route_request", arguments={"kind": "plan", "content": "错误天数", "steps": ["提交"], "trip": {"destination": "杭州", "days": "2"}}),
+    ModelReply.model_validate({"message": {"role": "assistant", "content": "被截断"}, "finish_reason": "length"}),
+    ModelReply.model_validate({"message": {"role": "assistant", "tool_calls": [{"id": "broken", "type": "function", "function": {"name": "route_request", "arguments": "{"}}]}, "finish_reason": "tool_calls"}),
+])
+def test_invalid_planning_protocol_gets_one_correction_with_original_context(bad):
+    async def run():
+        from .test_trip_identity import existing_trip
+        history = [{"role": "user", "content": "只用百度公交"}]
+        trip = existing_trip()
+        original = deepcopy(trip)
+        model = FakeModel([bad, route("answer", "需要确认的条件")])
+        session, events = session_for(model)
+        result = await session.chat("只改第2天时间，其他不变", history, trip_context=trip)
+        assert result["kind"] == "answer" and len(model.planner_calls) == 2
+        first, corrected = [json.loads(messages[-1]["content"]) for messages in model.planner_calls]
+        feedback = corrected.pop("planning_feedback")
+        assert "schema" in feedback and first == corrected
+        assert model.planner_calls[1][1] == history[0] and trip == original
+        assert not model.executor_calls and not events and session._task is None
+        repeated = FakeModel([bad, bad])
+        failed, failed_events = session_for(repeated)
+        with pytest.raises(ModelError, match="自动纠正后仍未通过"):
+            await failed.chat("只改时间", history, trip_context=trip)
+        assert len(repeated.planner_calls) == 2 and not repeated.executor_calls and not failed_events
+        await session.aclose()
+        await failed.aclose()
     asyncio.run(run())
