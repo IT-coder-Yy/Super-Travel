@@ -2,8 +2,9 @@ import { useConversations } from './hooks/useConversations'
 import { Dialog } from './components/Dialog'
 import { Photo, PHOTO, PHOTO_TWO } from './components/Photo'
 import { useAppUpdate } from './hooks/useAppUpdate'
+import { useActivityDrag } from './hooks/useActivityDrag'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Download, FolderOpen, BookmarkPlus, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUp, CalendarDays, Check, ChevronRight, Clock3, Download, FolderOpen, BookmarkPlus, GripVertical, Heart, History, Image as ImageIcon, Layers, Lightbulb, LoaderCircle, Map, MapPin, MessageCircle, Minus, Navigation, Pencil, Plus, RotateCcw, Save, Send, Settings, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react'
 import { ApiError, exportTrip, addTripCandidate, deleteTripCandidate, discardTripDraft, insertTripCandidate, parkTripActivity, applyTripDraft, cancelAgent, createConversation, deleteTripActivity, listConversations, moveTripActivity, readConversation, resolveTripPlace, restorePreviousTrip, selectTripPlace, sendAgentMessage } from './api'
 import { cancelUpdate, chooseDataDirectory, getAppVersion, onBeforeClose } from './desktop'
 import { MapCanvas } from './components/MapCanvas'
@@ -23,7 +24,7 @@ import { beginTripDraft, currentCandidates, hasTripDraft, createWorkspace, isWor
 type Panel = 'history' | 'settings' | 'photos' | 'favorites' | 'candidates' | 'edit' | 'new' | 'detail' | 'export' | null
 type PlacePickerState = { candidate?: boolean; conversation: ConversationSummary; day: number; activity?: Activity; initialTime: string }
 type CandidateActionState = { kind: 'insert' | 'delete'; conversation: ConversationSummary; candidate: Candidate }
-type ActivityActionState = { kind: 'move' | 'delete'; conversation: ConversationSummary; activity: Activity }
+type ActivityActionState = { kind: 'move' | 'delete'; conversation: ConversationSummary; activity: Activity; initialTargetIndex?: number; initialTargetDay?: number }
 const activityMinutes = (activity: Activity) => Number(activity.duration.match(/^约 (\d+) 分钟$/)?.[1] ?? 60)
 const describeError = (error: unknown) => error instanceof Error ? error.message : '操作没有完成，请重试。'
 
@@ -80,6 +81,12 @@ export default function App() {
   const costSummary = knownCosts(days)
   const routeConflict = trip ? days.flatMap(item => item.activities.map((activity, index) => routeDetails(item.activities[index - 1], activity, trip.transportMode ?? 'walking')?.conflict)).find(Boolean) : undefined
 
+  const dragDisabled = !ready || !trip || !day || panel !== 'edit' || placeFlow || applying || !!locating || !!recovering || saving || agentWorking || sending || hasInvalidTime
+  const activityDrag = useActivityDrag(`${current?.id}:${current?.revision}:${day?.day}`, dragDisabled, (activityId, beforeId, targetDay) => {
+    const activity = day?.activities.find(item => item.id === activityId)
+    if (activity) void openActivityAction('move', activity, { beforeId, targetDay, focusId: 'drag-trip-activity-' + activityId })
+  })
+
   function resetMap() { setZoom(1); setMapReset(value => value + 1) }
   closeSaveRef.current = async () => {
     if (placeSaveRef.current) await placeSaveRef.current
@@ -101,10 +108,10 @@ export default function App() {
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(null), 6500); return () => window.clearTimeout(timer) }, [toast])
   useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, [workspace.messages.length, chatOpen])
   useEffect(() => {
-    if (!ready || loading || !dirty || applying || locating || recovering || agentWorking || sending || placeFlow || panel === 'export') return
+    if (!ready || loading || !dirty || applying || locating || recovering || agentWorking || sending || placeFlow || activityDrag.drag || panel === 'export') return
     const timer = window.setTimeout(() => { if (!placeFlowRef.current) void persist(workspace).catch(error => notify(describeError(error), true)) }, 900)
     return () => window.clearTimeout(timer)
-  }, [workspace, ready, loading, dirty, applying, locating, recovering, agentWorking, sending, placeFlow, panel])
+  }, [workspace, ready, loading, dirty, applying, locating, recovering, agentWorking, sending, placeFlow, panel, activityDrag.drag])
   useEffect(() => {
     const identifier = current?.id
     if (!identifier || !agentWorking || recovering) return
@@ -204,10 +211,11 @@ export default function App() {
       setPlaceError(describeError(error))
     } finally { setPreparingPlace(false) }
   }
-  async function openActivityAction(kind: 'move' | 'delete', activity: Activity) {
+  async function openActivityAction(kind: 'move' | 'delete', activity: Activity, position?: { beforeId?: string | null; targetDay?: number; focusId: string }) {
     if (!ready || !trip || applying || locating || agentWorking || sending || placeFlowRef.current || hasInvalidTime) return
     const identifier = currentRef.current?.id
-    placeFocusRef.current = kind + '-trip-activity-' + activity.id
+    const originalDraft = dataRef.current.draft
+    placeFocusRef.current = position?.focusId ?? kind + '-trip-activity-' + activity.id
     placeFlowRef.current = true
     setPreparingPlace(true); setPlaceError('')
     try {
@@ -217,7 +225,16 @@ export default function App() {
       const current = currentRef.current
       const savedActivity = dataRef.current.draft?.flatMap(item => item.activities).find(item => item.id === activity.id)
       if (!current || current.id !== identifier || !savedActivity) throw new Error('草稿已变化，请重新打开编辑。')
-      setActivityAction({ kind, conversation: { ...current }, activity: structuredClone(savedActivity) })
+      let initialTargetIndex: number | undefined
+      if (position?.beforeId !== undefined) {
+        if (dataRef.current.draft !== originalDraft) throw new Error('草稿已变化，请重新拖动活动。')
+        const targetDay = dataRef.current.draft!.find(item => position.targetDay === undefined ? item.activities.some(item => item.id === activity.id) : item.day === position.targetDay)
+        if (!targetDay) throw new Error('目标日期已变化，请重新拖动活动。')
+        const remaining = targetDay.activities.filter(item => item.id !== activity.id)
+        initialTargetIndex = position.beforeId === null ? remaining.length : remaining.findIndex(item => item.id === position.beforeId)
+        if (initialTargetIndex < 0) throw new Error('目标位置已变化，请重新拖动活动。')
+      }
+      setActivityAction({ kind, conversation: { ...current }, activity: structuredClone(savedActivity), initialTargetIndex, initialTargetDay: position?.targetDay })
     } catch (error) {
       placeFlowRef.current = false
       setPlaceError(describeError(error))
@@ -540,7 +557,7 @@ export default function App() {
         <div className="map-tools" aria-label="地图工具"><button className={`tool-layer ${layers ? 'is-on' : ''}`} onClick={() => setLayers(!layers)} aria-pressed={layers} aria-label="切换地图图层"><Layers size={23} /><span>标注</span></button><div className="zoom-tools"><button onClick={() => setZoom(value => Math.min(1.6, +(value + .15).toFixed(2)))} disabled={zoom >= 1.6} aria-label="放大地图"><Plus size={23} /></button><button onClick={() => setZoom(value => Math.max(.85, +(value - .15).toFixed(2)))} disabled={zoom <= .85} aria-label="缩小地图"><Minus size={23} /></button><button onClick={resetMap} aria-label="重置地图视角"><Navigation size={21} /></button></div></div>
         {day && <section className="itinerary-card" aria-label="当日行程">
           <div className={`day-cover ${isExample ? '' : 'day-cover--real'}`}>{isExample && <><Photo /><div className="day-cover-shade" /></>}<div className="day-cover-copy"><h2>{isExample ? day.title : `第 ${day.day} 天行程`}</h2><p>{isExample ? `第 ${day.day} 天 · ${day.subtitle}` : day.activities.length ? `${day.activities.length} 项活动` : '自由安排'}</p></div>{isExample && <span className="example-badge">示例行程</span>}</div>
-          <div className="activities">{day.activities.length === 0 && <div className="empty-day"><CalendarDays size={24} /><h3>自由安排</h3><p>这一天还没有活动，可以继续添加想去的地点。</p><button className="secondary-button" onClick={startEdit} disabled={agentWorking || applying || !!locating}>新增当天活动</button></div>}{day.activities.map((activity, index) => <button className={`activity ${selectedActivity?.id === activity.id ? 'selected' : ''}`} key={activity.id} onClick={() => setSelected(activity.id)}><span className="step-number">{index + 1}</span><span className="activity-copy"><span className="activity-heading"><time>{activity.time}</time><strong>{activity.title}</strong></span><span className="activity-duration"><Clock3 size={13} />{activity.duration}</span><span className="activity-description">{activity.description}</span>{trip && <><span className="activity-cost">{activity.cost ? `${formatCost(activity.cost.amountFen)} · 用户填写` : '活动费用未知'}</span><TripLeg previous={day.activities[index - 1]} activity={activity} mode={trip.transportMode ?? 'walking'} /></>}{trip && !activity.place && <span className="location-pending">地点已改，等待重新定位</span>}</span>{isExample && <Photo className={`activity-thumb thumb-${index}`} src={index === 1 ? PHOTO_TWO : PHOTO} />}</button>)}</div>
+          <div className="activities">{day.activities.length === 0 && <div className="empty-day"><CalendarDays size={24} /><h3>自由安排</h3><p>这一天还没有活动，可以继续添加想去的地点。</p><button className="secondary-button" onClick={startEdit} disabled={agentWorking || applying || !!locating}>新增当天活动</button></div>}{day.activities.map((activity, index) => <div className="activity-entry" key={activity.id}><button className={`activity ${selectedActivity?.id === activity.id ? 'selected' : ''}`} onClick={() => setSelected(activity.id)}><span className="step-number">{index + 1}</span><span className="activity-copy"><span className="activity-heading"><time>{activity.time}</time><strong>{activity.title}</strong></span><span className="activity-duration"><Clock3 size={13} />{activity.duration}</span><span className="activity-description">{activity.description}</span>{trip && <><span className="activity-cost">{activity.cost ? `${formatCost(activity.cost.amountFen)} · 用户填写` : '活动费用未知'}</span></>}{trip && !activity.place && <span className="location-pending">地点已改，等待重新定位</span>}</span>{isExample && <Photo className={`activity-thumb thumb-${index}`} src={index === 1 ? PHOTO_TWO : PHOTO} />}</button>{trip && <TripLeg previous={day.activities[index - 1]} activity={activity} mode={trip.transportMode ?? 'walking'} />}</div>)}</div>
           <div className="itinerary-summary"><MapPin size={18} /><span>{day.activities.length} 个地点 · 建议安排</span>{hasDraft && <span className="draft-label">修改草稿</span>}</div>
           {trip && <p className="trip-cost-summary" aria-label="行程费用">已知费用小计 <strong>{formatCost(costSummary.amountFen)}</strong><span>{costSummary.unknown ? `另有 ${costSummary.unknown} 项活动费用未知` : '活动费用均已填写'} · 全部天数，不含未填写的交通住宿等开支</span></p>}
           <button className="edit-button" onClick={startEdit} disabled={agentWorking || applying || !!locating}><Pencil size={18} />{hasDraft ? '继续编辑草稿' : '编辑当天行程'}</button>
@@ -563,16 +580,18 @@ export default function App() {
     {panel === 'history' && <Dialog title="历史旅行" onClose={() => setPanel(null)}><div className="history-list">{recoveryOptions.length > 0 && <button className="recovery-notice" onClick={() => setPanel('settings')}>有 {recoveryOptions.length} 个会话无法读取，前往设置查看恢复选项。</button>}{history.length === 0 ? <div className="empty-state"><History size={34} /><h3>旅行，从这里留下足迹</h3><p>保存第一份行程后，下次打开就能继续。</p><button className="primary-button" disabled={!ready || saving || !!recovering} onClick={() => void persist().then(() => notify('第一份行程已保存。')).catch(error => notify(describeError(error), true))}>保存当前行程</button></div> : history.map(item => <button className="history-item" key={item.id} disabled={saving || !!recovering} onClick={() => void openHistory(item.id)}><span className="history-icon"><Map size={22} /></span><span><strong>{item.title}</strong><small>{new Date(item.updated_at).toLocaleString('zh-CN')} · 本地会话</small></span>{current?.id === item.id ? <span className="current-label">当前</span> : <ChevronRight size={18} />}</button>)}</div></Dialog>}
     {panel === 'new' && <Dialog title="开始一段新旅程" onClose={() => setPanel(null)}><div className="new-trip-content"><p>先给这段旅程取个名字。</p><label className="field-label">会话名称<input autoFocus maxLength={80} value={newTitle} onChange={event => setNewTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void newConversation() }} /></label><p className="muted-note">创建空白会话，再告诉旅伴国内目的地、1～7 天行程和你的偏好。</p><button className="primary-button" disabled={!ready || !newTitle.trim() || saving || !!recovering || applying || !!locating} onClick={() => void newConversation()}><Plus size={17} />创建本地会话</button></div></Dialog>}
     {panel === 'edit' && day && <Dialog title={placePicker ? placePicker.activity ? '替换地点' : '新增地点' : activityAction ? activityAction.kind === 'move' ? '移动活动' : '删除活动' : '编辑当天行程'} onClose={() => { if (placePicker || activityAction) closeEditorAction(); else setPanel(null) }} wide busy={applying || !!locating || preparingPlace || placeSaving}><div className="edit-content">
-      {placePicker ? <PlacePicker conversation={placePicker.conversation} day={placePicker.day} destination={trip!.destination} activity={placePicker.activity} initialTime={placePicker.initialTime} onSelect={savePlaceSelection} onCancel={closeEditorAction} /> : activityAction ? <ActivityAction kind={activityAction.kind} conversation={activityAction.conversation} activity={activityAction.activity} days={days} onSave={saveActivityAction} onPark={() => parkActivity(activityAction.activity)} onCancel={closeEditorAction} /> : <>
+      {placePicker ? <PlacePicker conversation={placePicker.conversation} day={placePicker.day} destination={trip!.destination} activity={placePicker.activity} initialTime={placePicker.initialTime} onSelect={savePlaceSelection} onCancel={closeEditorAction} /> : activityAction ? <ActivityAction kind={activityAction.kind} conversation={activityAction.conversation} activity={activityAction.activity} days={days} initialTargetIndex={activityAction.initialTargetIndex} initialTargetDay={activityAction.initialTargetDay} onSave={saveActivityAction} onPark={() => parkActivity(activityAction.activity)} onCancel={closeEditorAction} /> : <>
       <div className="edit-notice"><Pencil size={17} /><span>正在编辑草稿。点击“应用修改”后才会替换已保存行程。</span></div>
-      <fieldset className="editor-form" disabled={applying || !!locating || agentWorking || preparingPlace} aria-busy={applying || !!locating || preparingPlace}>
-        <div className="editor-day-tabs">{days.map(item => <button key={item.day} className={day.day === item.day ? 'selected' : ''} onClick={() => selectDay(item.day)}>第 {item.day} 天</button>)}</div>
+      {trip && <p className="muted-note" id="activity-drag-help">拖动手柄调整当天顺序，或拖到其他日期标签；松开后确认日期、位置和时间，也可用移动按钮或键盘操作。</p>}
+      {activityDrag.drag?.moving && <div className="activity-drag-preview" aria-hidden="true" style={{ left: Math.min(activityDrag.drag.x + 14, window.innerWidth - 230), top: Math.min(activityDrag.drag.y + 14, window.innerHeight - 58) }}><GripVertical size={16} /><span>{day.activities.find(item => item.id === activityDrag.drag!.activityId)?.title}<small>{activityDrag.drag.targetDay !== undefined ? `移到第 ${activityDrag.drag.targetDay} 天 · 松开后确认` : activityDrag.drag.beforeId === undefined ? '移到活动或日期标签 · Esc 取消' : '松开后确认位置和时间'}</small></span></div>}
+      <fieldset ref={activityDrag.listRef} className="editor-form" disabled={applying || !!locating || agentWorking || preparingPlace} aria-busy={applying || !!locating || preparingPlace}>
+        <div className="editor-day-tabs">{days.map(item => <button key={item.day} data-drop-day={item.day === day.day ? undefined : item.day} className={`${day.day === item.day ? 'selected' : ''}${activityDrag.drag?.targetDay === item.day ? ' editor-day-drop-target' : ''}`} onClick={() => selectDay(item.day)}>第 {item.day} 天</button>)}</div>
         {trip && <div className="editor-place-toolbar"><span>选择真实地点，补充当天安排。</span><button id="add-trip-place" type="button" className="secondary-button" disabled={!ready || day.activities.length >= 8 || hasInvalidTime} onClick={() => void openPlacePicker()}>{preparingPlace ? <LoaderCircle size={16} className="spin" /> : <Plus size={16} />}新增地点</button></div>}
         {trip && day.activities.length >= 8 && <p className="muted-note">当天已有 8 项活动，可替换现有地点。</p>}
         {placeError && <p className="inline-error" role="alert">{placeError}</p>}
         {hasInvalidTime && !day.activities.some(activity => timeInputs[activity.id] !== undefined) && <p className="inline-error" role="alert">其他日期还有未保存的时间，请返回对应日期修正后再应用。</p>}
         {day.activities.length === 0 && <div className="editor-empty-day"><h3>自由安排</h3><p>这一天暂时留白，点击“新增地点”继续安排。</p></div>}
-        {day.activities.map((activity, index) => <div className="editor-activity" key={activity.id}>
+        {day.activities.map((activity, index) => <div data-activity-id={activity.id} className={`editor-activity${activityDrag.drag?.activityId === activity.id ? ' editor-activity--dragging' : ''}${activityDrag.drag?.beforeId === activity.id ? ' editor-activity--drop-before' : ''}${activityDrag.drag?.beforeId === null && activityDrag.drag.targetDay === undefined && index === day.activities.length - 1 ? ' editor-activity--drop-after' : ''}`} key={activity.id}>
           <span className="editor-number">{index + 1}</span>
           <div className="editor-fields">
             <div className="editor-inline"><label className="field-label">时间<input type="time" step={trip ? 900 : undefined} value={timeInputs[activity.id] ?? activity.time} aria-invalid={timeInputs[activity.id] !== undefined || undefined} aria-describedby={timeInputs[activity.id] !== undefined ? 'time-error-' + activity.id : undefined} onChange={event => editActivityTime(activity, event.target.value)} /></label><label className="field-label name-field">地点<input maxLength={60} value={activity.title} onChange={event => editActivity(activity.id, { title: event.target.value })} /></label></div>
@@ -588,7 +607,7 @@ export default function App() {
             <div className="field-label"><label htmlFor={`notes-${activity.id}`}>备注</label><textarea id={`notes-${activity.id}`} rows={2} maxLength={500} value={activity.description} onChange={event => editActivity(activity.id, { description: event.target.value })} /></div>
             {trip && <div className="editor-activity-actions"><button id={'park-trip-activity-' + activity.id} type="button" className="text-button" disabled={!ready || hasInvalidTime} onClick={() => void parkActivity(activity).catch(error => setPlaceError(describeError(error)))}><BookmarkPlus size={15} />暂时不去，移入候选</button><button id={'move-trip-activity-' + activity.id} type="button" className="text-button" disabled={!ready || hasInvalidTime} onClick={() => void openActivityAction('move', activity)}><ArrowRight size={15} />移动活动</button><button id={'delete-trip-activity-' + activity.id} type="button" className="text-button danger-text" disabled={!ready || hasInvalidTime} onClick={() => void openActivityAction('delete', activity)}><Trash2 size={15} />删除活动</button></div>}
           </div>
-          <div className="reorder-buttons"><button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div>
+          <div className="reorder-buttons">{trip && <button id={'drag-trip-activity-' + activity.id} type="button" className="icon-button activity-drag-handle" aria-label={`拖动${activity.title}`} aria-describedby="activity-drag-help" title="拖动调整当天顺序或移到其他日期；按 Enter 或空格打开移动表单" disabled={dragDisabled} onPointerDown={event => activityDrag.start(event, activity.id)} onClick={event => { event.preventDefault(); if (event.detail === 0) void openActivityAction('move', activity, { focusId: 'drag-trip-activity-' + activity.id }) }}><GripVertical size={18} /></button>}<button className="icon-button" aria-label={`上移${activity.title}`} disabled={index === 0} onClick={() => moveActivity(activity.id, -1)}><ArrowUp size={16} /></button><button className="icon-button" aria-label={`下移${activity.title}`} disabled={index === day.activities.length - 1} onClick={() => moveActivity(activity.id, 1)}><ArrowDown size={16} /></button></div>
         </div>)}
         <p className="muted-note">{trip ? '改地点后需重新定位，费用可留空；应用时核查新接驳路线。查不到的耗时会标为未知，请自行确认。' : '当前编辑的是示例行程，地点位置不作为真实旅行依据。'}</p>
         {routeConflict && <p className="inline-error" role="alert">{routeConflict} 请调整活动时间后再应用。</p>}

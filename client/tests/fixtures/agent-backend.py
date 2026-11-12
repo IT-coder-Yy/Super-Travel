@@ -29,7 +29,7 @@ class FixtureModel:
             context = json.loads(messages[-1]["content"])
             text = context["request"]
             if "固定行程" in text:
-                return reply(name="route_request", arguments={"kind": "plan", "content": "固定测试：查询地点并生成行程。", "steps": ["查询固定地点并提交两天行程"], "trip": {"destination": "杭州", "days": 2}})
+                return reply(name="route_request", arguments={"kind": "plan", "content": "固定测试：查询地点并生成行程。", "steps": ["查询固定地点并提交两天行程"], "trip": {"destination": "杭州", "days": 2, "transport_mode": (context.get("current_trip") or {}).get("trip", {}).get("transportMode") or "walking"}})
             kind, content, steps = "plan", "固定测试计划已开始。", ["查询杭州天气（固定测试工具）"]
             if "你好" in text:
                 kind, content, steps = "answer", "固定测试回复：你好，旅行者。", []

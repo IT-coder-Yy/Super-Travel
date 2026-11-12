@@ -16,6 +16,10 @@ React/TypeScript/Vite 工作台与 Tauri 桌面壳。下列命令均在仓库根
 | `tests/native/` | 原生 GUI 的服务夹具与驱动就绪检查 |
 | `scripts/` | 图标、工具/更新配置、原生 GUI 与升级验收 |
 
+## 行程编辑
+
+真实行程的编辑弹窗支持从手柄拖动活动，调整当天顺序，或放到其他日期标签以跨日移动。悬停只高亮日期，不切换或保存；松开后预填目标日期和末尾位置，需要核对位置、时间并保存草稿，再点击“应用修改”。支持移入空日，源日移空后保留；目标满 8 项、重复地点、时间冲突沿用现有校验。拖动中按 Esc、切换日期或在无效落点放下可取消；原有上下移按钮保留，手柄也支持 Enter/空格打开移动表单。不会自动调整其他活动时间。
+
 ## 开发、验证与构建
 
 ```powershell
@@ -82,3 +86,5 @@ Linux CI 安装系统中文字体 `fonts-noto-cjk`，截图必须能正常显示
 - [Tauri 官方 WebDriver 指南](https://v2.tauri.app/develop/tests/webdriver/)：推荐 embedded driver，支持 macOS；独立 tauri-driver 仍不支持 WKWebView。
 - [WebdriverIO 插件安装与测试 feature](https://webdriver.io/docs/desktop-testing/tauri/plugin-setup)：仅测试启用 `tauri-plugin-wdio-webdriver`。
 - [WebdriverIO 官方实现](https://github.com/webdriverio/desktop-mobile/tree/main/packages/tauri-plugin-webdriver)：原生平台执行器、W3C 路由和回环监听地址。本项目用 Python 标准库调用这些公开 W3C 协议，不引入第二套 npm 测试运行器。
+
+公交接驳可展开供应商首方案的线路、上下车站、换乘次数与参考总票价；保留键盘展开方式。供应商返回的有效总票价（含 0）原样展示，并注明“仅供参考，以实际结果为准”；缺失值仍显示未知。公交/驾车接驳还可展开同次响应的出租车估算、时段及计价备注；有效零出租车金额同样原样展示并注明仅供参考，缺失显示暂无估算。公交与出租车是替代选项，不相加；交通参考价不计入活动费用小计。旧行程缺详情可继续读取；地点、方式变化或记录过期时不展示旧票价，展开详情不会额外查询地图。

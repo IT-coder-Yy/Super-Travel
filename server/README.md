@@ -85,3 +85,13 @@ node --test server/scripts/tools-dev.test.mjs
 ```
 
 后端测试入口会先准备 PDF 资源，再运行 `server/tests/` 和 `client/tests/native/`。PyInstaller 在临时构建目录中按逻辑包名组织源码，将资源收进 `supertravel_server/assets/`；正式构建和原生验收共用冻结函数，源码仍保持扁平目录。桌面构建入口为 `npm run desktop:build`，详见[客户端说明](../client/README.md)。
+
+高德 MCP 清单遇到连接或超时失败时，在原超时预算内最多重试一次；不自动重试业务调用。最终失败保留基础地图 API，并在工具状态中显示 MCP 故障，清单沿用工具服务既有的 5 分钟缓存；缓存到期后重新测试连接会重新发现。
+
+## 交通参考信息
+
+`incomingRoute.transit` 是可选字段，包含首方案 `segments`（`mode`、可选 `lineName` / `departureStop` / `arrivalStop`）、可选 `transferCount` 和 `fare`（整数 `amountFen`、`currency: CNY`）。百度读取 `routes[0].price`，高德读取 `transits[0].cost`；只取同一方案的分段，每组可替代线路仅取第一条，不累加分段票价。有效总票价（含 0）在界面和导出原样展示，并注明“仅供参考，以实际结果为准”；缺失值仍显示未知，有效耗时仍保留。
+
+`incomingRoute.taxiEstimates` 是可选数组（最多 8 项），每项含非负整数 `amountFen`、`currency: CNY`、`kind: estimate` 及可选 `label`（时段，100 字）/ `note`（计价备注，500 字）。百度读取同次响应 `result.taxi.detail[].total_price/desc` 和 `taxi.remark`，高德读取 `route.taxi_cost`；不拼入其他响应、备选方案或道路收费。有效零金额原样展示并注明“仅供参考，以实际结果为准”；非法值按暂无可用估算处理。缺字段/null 表示旧记录未查询，空数组表示本次无可用估算；步行不附加出租车估算。展示和导出不另发查询，公交与出租车是替代选项，不相加。
+
+字段随现有路线记录保存、草稿应用、上一版恢复及 Markdown/PDF 正式导出；旧 JSON 无需迁移。接驳凭据校验仍比较完整服务端记录，客户端和模型不能自行附加票价；交通参考价不进入用户填写的活动费用小计。

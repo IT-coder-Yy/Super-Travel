@@ -1,4 +1,4 @@
-import type { Activity, TripDay, TripRoute } from './types'
+import type { Activity, TripDay, TripRoute, TransitDetails, TransitSegment } from './types'
 
 export function tripOverview(days: TripDay[]) {
   const entries = days.map(day => day.activities.length ? `第 ${day.day} 天 ${day.activities.length} 项活动` : `第 ${day.day} 天自由安排`)
@@ -27,6 +27,8 @@ export function routeDetails(previous: Activity | undefined, activity: Activity,
     ? `接驳时间不足：仅留 ${Math.max(0, gap)} 分钟，${modes[route.mode]}需约 ${route.durationMinutes} 分钟。` : ''
   const queried = route.queriedAt ? new Date(route.queriedAt).toLocaleString('zh-CN') : ''
   return { text: `${modes[route.mode]}约 ${route.durationMinutes} 分钟${route.distanceMeters == null ? '' : ` · ${(route.distanceMeters / 1000).toFixed(1)} 公里`}`,
+    transit: route.mode === 'transit' ? route.transit ?? null : undefined,
+    taxiEstimates: route.mode !== 'walking' ? route.taxiEstimates ?? null : undefined,
     conflict, detail: `${route.provider === 'baidu' ? '百度地图' : route.provider === 'amap' ? '高德地图' : '地图查询'}${queried ? ` · ${queried}` : ''}；耗时为查询估计。` }
 }
 
@@ -39,4 +41,15 @@ export function clearInvalidRoutes(days: TripDay[]) {
 export function knownCosts(days: TripDay[]) {
   const activities = days.flatMap(day => day.activities)
   return { amountFen: activities.reduce((sum, activity) => sum + (activity.cost?.amountFen ?? 0), 0), unknown: activities.filter(activity => activity.cost == null).length }
+}
+
+export function transitFare(details: TransitDetails | null) {
+  const fare = details?.fare
+  return fare ? `参考总票价 ${formatCost(fare.amountFen)}（仅供参考，以实际结果为准）` : '参考总票价未知'
+}
+
+export function transitSegment(segment: TransitSegment) {
+  if (segment.mode === 'walking') return '步行接驳'
+  if (segment.mode === 'other') return '此段交通详情待确认'
+  return `${segment.lineName || '线路待确认'}：${segment.departureStop || '上车站待确认'} 上车 → ${segment.arrivalStop || '下车站待确认'} 下车`
 }
