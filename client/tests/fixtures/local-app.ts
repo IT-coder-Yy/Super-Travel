@@ -97,6 +97,16 @@ export const test = base.extend<{}, { localApp: LocalApp }>({
       if (vite) await exited(vite);
     }
   }, { scope: 'worker' }],
+  // Default business regression is offline; keep the existing explicit photo opt-in.
+  // A test's page.route fixture may supply a captured response instead.
+  context: async ({ context }, use) => {
+    await context.route('**/*', route => {
+      const host = new URL(route.request().url()).hostname;
+      const livePhoto = process.env.STA_LIVE_PHOTOS === '1' && ['thumb.wikimedia.org', 'upload.wikimedia.org'].includes(host);
+      return ['127.0.0.1', 'localhost', '[::1]'].includes(host) || livePhoto ? route.continue() : route.abort('blockedbyclient');
+    });
+    await use(context);
+  },
   baseURL: async ({ localApp }, use) => { await use(localApp.url); },
 });
 export { expect };

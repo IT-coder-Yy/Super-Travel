@@ -111,6 +111,13 @@ class FixtureTools:
             self.route_calls.append(dict(_arguments))
             if self.route_profile == "quota":
                 raise ToolError("tool_quota", False, "固定离线夹具：额度不足")
+            if self.route_profile.startswith("options"):
+                count = 0 if self.route_profile == "options-empty" else 1 if self.route_profile == "options-one" else 5
+                paths = [{"duration": 4500 if self.route_profile == "options-conflict" and i == 1 else (i + 1) * 600,
+                          "distance": (i + 1) * 1000, "price": [9, 0, 2.29, 3, 4][i], "steps": [[{"type": 3,
+                          "vehicle": {"name": f"离线方案{i + 1}号线𠮷🏞️", "type": 1, "start_name": "固定起点站", "end_name": "固定终点站"}}]]} for i in range(count)]
+                return {"structuredContent": {"status": 0, "result": {"routes": paths,
+                    "taxi": {"detail": [{"total_price": 0, "desc": "白天"}], "remark": "离线样本，不是实际订单报价。"}}}}
             duration = 4500 if self.route_profile == "conflict" else 780
             return {"structuredContent": {"status": 0, "result": {"routes": [
                 {"duration": duration, "distance": 1200, "price": 0, "steps": []}]}}}
