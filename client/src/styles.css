@@ -194,3 +194,30 @@
 .transport-impact li+li{margin-top:5px}
 .transport-action .dialog-actions{gap:12px;flex-wrap:wrap}
 @media(max-width:520px){.editor-transport{align-items:flex-start;flex-wrap:wrap}.transport-impact ul{max-height:140px}}
+
+.trip-leg .route-compare-trigger{align-self:flex-start;margin-top:8px;min-height:36px}
+.route-comparison-leg{font-size:14px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}
+.route-comparison-scroll>.secondary-button{margin-top:12px}
+.route-options{margin-top:24px;min-width:0}
+.route-options>legend{font-size:13px;font-weight:600;margin-bottom:12px}
+.route-option{padding:16px 0;border-top:1px solid var(--line);font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.route-option-choice{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+.route-option-choice input{margin-top:5px;width:16px;height:16px;accent-color:var(--blue);flex-shrink:0}
+.route-option-choice span span{display:block;font-variant-numeric:tabular-nums}
+.route-option-choice strong{font-size:13px}
+.route-option--selected .route-option-choice strong{color:var(--blue)}
+.route-option-body{padding-left:28px}
+.route-option-body p{margin:5px 0}
+.route-option-body details{margin:8px 0}
+.route-option-body summary{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.route-option-body ol,.route-taxi-reference ul{padding-left:20px}
+.route-option-body li,.route-taxi-reference li{margin:6px 0}
+.route-option-warning{color:#9d4121}
+.route-taxi-reference{padding-top:16px;border-top:1px solid var(--line);font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.dialog--route-comparison[open]{display:flex;flex-direction:column;overflow:hidden}
+.dialog--route-comparison .dialog-header{flex-shrink:0}
+.dialog--route-comparison .edit-content{padding:0;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.route-comparison{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.route-comparison-scroll{padding:24px;overflow:auto;min-height:0}
+.route-comparison .dialog-actions{margin:0;padding:16px 24px;gap:12px;flex-wrap:wrap;flex-shrink:0;background:#fbfdff}
+@media(max-width:520px){.route-comparison-scroll{padding:18px}.route-comparison .dialog-actions{padding:14px 18px}}
