@@ -239,3 +239,82 @@ test('更名后未定位的接驳不允许比较', async ({ page, localApp }) =>
   await expect(editor(page)).toContainText('地点名称已改，请重新定位。');
   expect(await trip.calls()).toHaveLength(0);
 });
+
+test('D3 整程切换、非首方案、时间备注费用、聊天续改、导出重启及恢复闭环', async ({ page, localApp }) => {
+  test.setTimeout(90_000);
+  const trip = await setup(page, localApp);
+  for (const mode of ['driving', 'transit']) {
+    await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+    await page.getByRole('button', { name: '切换交通方式', exact: true }).click();
+    await page.getByLabel('整程接驳方式', { exact: true }).selectOption(mode);
+    await page.getByRole('button', { name: '保存方式到草稿' }).click();
+    await expect(editor(page)).toBeVisible();
+    const pending = await trip.read();
+    expect(pending.data.draftTrip.transportMode).toBe(mode);
+    expect(pending.data.draft.every((day: { activities: { incomingRoute?: unknown }[] }) => day.activities.every(item => !item.incomingRoute))).toBe(true);
+    expect(await trip.calls()).toHaveLength(mode === 'driving' ? 0 : 2);
+    if (mode === 'driving') {
+      await page.getByRole('button', { name: '应用修改', exact: true }).click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect((await trip.read()).data.trip.transportMode).toBe('driving');
+    }
+  }
+  await editor(page).getByRole('button', { name: '比较公交方案', exact: true }).click();
+  await compare(page);
+  await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
+  await page.getByRole('button', { name: '保存方案到草稿' }).click();
+  await expect(editor(page)).toBeVisible();
+  await page.getByLabel('时间', { exact: true }).first().fill('09:15');
+  await page.getByLabel('备注', { exact: true }).first().fill('D3 串联验收备注𠮷🏞️');
+  await page.getByLabel('活动费用（元）', { exact: true }).first().fill('23.45');
+  await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('行程费用')).toContainText('¥23.45');
+  const beforeChat = await trip.read();
+  const selected = beforeChat.data.days[0].activities[1].incomingRoute;
+  expect(selected).toMatchObject({ selection: 'user', durationMinutes: 20, transit: { fare: { amountFen: 0 } } });
+  expect(beforeChat.data.days[0].activities[0]).toMatchObject({ time: '09:15', description: 'D3 串联验收备注𠮷🏞️', cost: { amountFen: 2345 } });
+  expect(await trip.calls()).toHaveLength(4);
+
+  await page.getByLabel('旅行对话输入').fill('固定行程，保持身份，末项延后15分钟');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续编辑草稿', exact: true })).toBeEnabled();
+  const pending = await trip.read();
+  expect(pending.data.days).toEqual(beforeChat.data.days);
+  expect(pending.data.draft[0].activities[1]).toMatchObject({ time: '11:15', incomingRoute: selected });
+  expect(pending.data.draftTrip.transportMode).toBe('transit');
+  await page.getByRole('button', { name: '继续编辑草稿', exact: true }).click();
+  await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const applied = await trip.read();
+  expect(applied.data.days[0].activities[1].incomingRoute).toEqual(selected);
+  for (const [index, day] of beforeChat.data.days.entries()) {
+    for (const [position, activity] of day.activities.entries()) {
+      const current = applied.data.days[index].activities[position];
+      for (const key of ['id', 'description', 'cost', 'place']) expect(current[key]).toEqual(activity[key]);
+    }
+  }
+  expect(applied.data.favorites).toEqual(trip.original.data.favorites);
+  expect(applied.data.candidates).toEqual(trip.original.data.candidates);
+  expect(await trip.calls()).toHaveLength(4);
+  const path = '/conversations/' + applied.id + '/trip/export';
+  const md = await localApp.request(path, 'POST', { expected_revision: applied.revision });
+  for (const text of ['用户选用方案', '离线方案2号线𠮷🏞️', '¥0.00', '¥23.45', 'D3 串联验收备注𠮷🏞️']) expect(md.markdown).toContain(text);
+  const pdf = await localApp.request(path, 'POST', { expected_revision: applied.revision, format: 'pdf' });
+  const bytes = Buffer.from(pdf.pdfBase64, 'base64');
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  await writeFile('artifacts/d3-flow.pdf', bytes);
+  await writeFile('artifacts/d3-flow.md', md.markdown, 'utf8');
+  expect(await trip.read()).toEqual(applied);
+  await localApp.restart();
+  await page.reload();
+  await expect(page.locator('.activities .trip-leg').first()).toContainText('公共交通约 20 分钟');
+  expect(await trip.read()).toEqual(applied);
+  await expect(page.locator('.startup-intro')).toHaveCount(0);
+  await page.screenshot({ path: 'artifacts/d3-stage-flow.png', fullPage: true });
+  await page.getByRole('button', { name: '恢复上一版行程', exact: true }).click();
+  await expect(page.locator('.activities .activity-heading time').last()).toContainText('11:00');
+  const restored = await trip.read();
+  for (const field of ['days', 'trip', 'candidates', 'favorites']) expect(restored.data[field]).toEqual(beforeChat.data[field]);
+  expect(await trip.calls()).toHaveLength(0); // Restart reset the fixture counter; read/restore never query.
+});
