@@ -12,7 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from supertravel_server.mcp_client import ToolError
-from supertravel_server.trip_routes import MODES, query_route, route_fresh, route_matches, unknown_route
+from supertravel_server.trip_routes import MODES, RouteSelectionExpired, query_route, route_contexts, route_fresh, route_matches, unknown_route
 
 
 class StrictModel(BaseModel):
@@ -75,6 +75,7 @@ class IncomingRoute(StrictModel):
     reason: str | None = Field(default=None, max_length=500)
     transit: TransitDetails | None = None
     taxiEstimates: list[TaxiEstimate] | None = Field(default=None, max_length=8)
+    selection: Literal["user"] | None = None
 
     @model_validator(mode="after")
     def complete_evidence(self):
@@ -88,6 +89,8 @@ class IncomingRoute(StrictModel):
             raise ValueError("transit details need a verified transit route")
         if self.taxiEstimates is not None and (self.mode == "walking" or self.status != "verified"):
             raise ValueError("taxi estimates need a verified transit or driving route")
+        if self.selection is not None and (self.mode != "transit" or self.status != "verified"):
+            raise ValueError("user selection needs a verified transit route")
         return self
 
 
@@ -290,6 +293,8 @@ class TripResearch:
             self.candidates = {item["id"]: Candidate.model_validate(item).model_dump(exclude_none=True) for item in existing_candidates}
         self.routes: dict[tuple[str, str, str], dict] = {}
         self.unavailable: set[str] = set()
+        self.selected_routes = {}
+        contexts = route_contexts(existing_days)
         for day in existing_days or []:
             for activity in day.get("activities", []):
                 try:
@@ -304,7 +309,9 @@ class TripResearch:
                             self.activities[identifier.strip()] = previous
                         if activity.get("incomingRoute") is not None:
                             route = IncomingRoute.model_validate(activity["incomingRoute"]).model_dump(exclude_none=True)
-                            if route["toPlaceId"] == place["id"] and route["status"] == "verified" and route_fresh(route):
+                            if route.get("selection") == "user" and identifier in contexts:
+                                self.selected_routes[identifier] = (deepcopy(contexts[identifier]), route)
+                            elif route["toPlaceId"] == place["id"] and route["status"] == "verified" and route_fresh(route):
                                 self.routes[route["fromPlaceId"], route["toPlaceId"], route["mode"]] = route
                 except (ValidationError, TypeError):
                     continue
@@ -454,6 +461,12 @@ class TripResearch:
                 if len(activities) > 1:
                     origin = activities[-2]["place"]
                     route = self.routes.get((origin["id"], place["id"], request.transport_mode))
+                    choice = self.selected_routes.get(activities[-1]["id"])
+                    context = (day.day, activities[-2]["id"], activities[-1]["id"], origin, place)
+                    if choice and choice[0] == context and choice[1]["mode"] == request.transport_mode:
+                        if not route_fresh(choice[1]):
+                            raise RouteSelectionExpired(f"第 {day.day} 天前往{place['name']}的用户选用公交方案已过期，请在编辑中重新比较并选择；原草稿仍保留。")
+                        route = choice[1]
                     activities[-1]["incomingRoute"] = deepcopy(route) if route and route_fresh(route) else unknown_route(origin, place, request.transport_mode)
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})
         result = validate_result({"days": days, "trip": {"destination": request.destination, "summary": planned.summary,
