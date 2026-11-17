@@ -20,6 +20,7 @@ export function routeDetails(previous: Activity | undefined, activity: Activity,
   }
   const age = route.queriedAt ? Date.now() - Date.parse(route.queriedAt) : NaN
   if (!Number.isFinite(age) || age < 0 || age > 24 * 60 * 60 * 1000) {
+    if (route.selection === 'user') return { text: '用户选用方案已过期', conflict: '请重新比较并选择公交方案。', detail: '旧方案保留在草稿中；重新选择后才能应用，不会自动换成首方案。' }
     return { text: '接驳耗时已过期，待重新查询', conflict: '', detail: '应用修改时重新查询，不用过期数据判断时间冲突。' }
   }
   const gap = minutes(activity.time) - minutes(previous.time) - Number(previous.duration.match(/^约 (\d+) 分钟$/)?.[1])
@@ -32,9 +33,13 @@ export function routeDetails(previous: Activity | undefined, activity: Activity,
     conflict, detail: `${route.provider === 'baidu' ? '百度地图' : route.provider === 'amap' ? '高德地图' : '地图查询'}${queried ? ` · ${queried}` : ''}；耗时为查询估计。` }
 }
 
-export function clearInvalidRoutes(days: TripDay[]) {
+export function clearInvalidRoutes(days: TripDay[], previousDays?: TripDay[]) {
+  const context = (day: TripDay, index: number) => JSON.stringify([day.day, day.activities[index - 1]?.id, day.activities[index - 1]?.place, day.activities[index]?.place])
+  const before = new Map(previousDays?.flatMap(day => day.activities.map((activity, index) => [activity.id, context(day, index)])))
   for (const day of days) day.activities.forEach((activity, index) => {
-    if (activity.incomingRoute && (activity.incomingRoute.fromPlaceId !== day.activities[index - 1]?.place?.id || activity.incomingRoute.toPlaceId !== activity.place?.id)) delete activity.incomingRoute
+    const route = activity.incomingRoute
+    if (route && (route.fromPlaceId !== day.activities[index - 1]?.place?.id || route.toPlaceId !== activity.place?.id ||
+      route.selection === 'user' && previousDays && before.get(activity.id) !== context(day, index))) delete activity.incomingRoute
   })
 }
 
