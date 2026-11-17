@@ -21,6 +21,10 @@ class TripRevision(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class TripTransport(TripRevision):
+    mode: Literal["walking", "driving", "transit"]
+
+
 class ResolvePlace(TripRevision):
     activity_id: str = Field(min_length=1, max_length=200)
     query: str = Field(min_length=1, max_length=100)
@@ -157,6 +161,7 @@ async def refresh_routes(tools, days, destination, transport_mode="walking"):
     clear_changed_routes(days)
     research = TripResearch(tools, destination, days)
     exhausted = False
+    attempts = 0
     deadline = asyncio.get_running_loop().time() + 30
     for day in days:
         for previous, activity in zip(day["activities"], day["activities"][1:]):
@@ -165,9 +170,14 @@ async def refresh_routes(tools, days, destination, transport_mode="walking"):
                 continue
             mode = transport_mode
             origin, target = previous["place"], activity["place"]
-            if exhausted:
+            if exhausted or asyncio.get_running_loop().time() >= deadline:
                 activity["incomingRoute"] = unknown_route(origin, target, mode, "本次路线核查超时，剩余交通耗时未知。")
                 continue
+            if attempts >= 12:
+                activity["incomingRoute"] = unknown_route(origin, target, mode, "已达到本次 12 次路线核查上限，此段未核验，交通耗时未知。")
+                continue
+            # Count every business attempt, including failures and unsupported place pairs.
+            attempts += 1
             # Unknown results can be retried explicitly when applying the draft again.
             research.routes.pop((origin["id"], target["id"], mode), None)
             try:
@@ -279,6 +289,21 @@ def trip_router(agents, store, error_type):
                 kept.append(identifier)
         current.update(previousTrip=previous, days=result["days"], trip=result["trip"],
                        favorites=kept, candidates=pool, draft=None, draftTrip=None, draftCandidates=None, selectedDay=1)
+
+    @router.post("/{identifier}/trip/transport")
+    async def change_transport(identifier: UUID, payload: TripTransport):
+        async with agents.configuration_lock:
+            document = editable(identifier, payload.expected_revision)
+            meta, days, pool = candidate_context(document)
+            if (meta.get("transportMode") or "walking") == payload.mode:
+                return document
+            meta = {**meta, "transportMode": payload.mode}
+            for activity in _activities(days):
+                route = activity.get("incomingRoute")
+                if route is not None and route.get("mode") != payload.mode:
+                    activity.pop("incomingRoute")
+            return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta,
+                                        document.data.get("selectedDay", 1), check_days=True)
 
     @router.post("/{identifier}/trip/candidates/park")
     async def park_candidate(identifier: UUID, payload: TripActivityChange):
