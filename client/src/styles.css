@@ -183,3 +183,14 @@
 .trip-leg details ol { margin: 8px 0; padding-left: 20px; }
 .trip-leg details li { margin: 6px 0; overflow-wrap: anywhere; }
 .trip-leg details .trip-leg-note { color: #435c7c; }
+
+.editor-transport{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding-bottom:16px;border-bottom:1px solid var(--line);font-size:12px}
+.editor-transport p{margin-top:5px;color:var(--muted);font-size:11px}
+.editor-transport .secondary-button{flex-shrink:0}
+.transport-action .field-label{font-size:12px}
+.transport-impact{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.transport-impact p{margin-top:8px;color:var(--muted)}
+.transport-impact ul{margin:8px 0 0;padding-left:20px;max-height:180px;overflow:auto}
+.transport-impact li+li{margin-top:5px}
+.transport-action .dialog-actions{gap:12px;flex-wrap:wrap}
+@media(max-width:520px){.editor-transport{align-items:flex-start;flex-wrap:wrap}.transport-impact ul{max-height:140px}}
