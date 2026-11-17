@@ -257,10 +257,14 @@ async function hoverDate(page: Page, from: number, targetDay: number) {
   const start = await beginDrag(page, from);
   await page.mouse.move(start.x - 12, start.y, { steps: 2 });
   const tab = page.locator(`[data-drop-day="${targetDay}"]`);
-  await tab.scrollIntoViewIfNeeded();
-  const box = (await tab.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
-  await expect(tab).toHaveClass(/editor-day-drop-target/);
+  // Edge scrolling can move the date while the pointer travels toward it.
+  // Track its current position, as a user does, instead of reusing stale coordinates.
+  await expect.poll(async () => {
+    await tab.scrollIntoViewIfNeeded();
+    const box = (await tab.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 2 });
+    return tab.getAttribute('class');
+  }).toMatch(/editor-day-drop-target/);
   return tab;
 }
 
