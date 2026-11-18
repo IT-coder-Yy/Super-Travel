@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { isWorkspaceData } from '../../src/types';
+import { isWorkspaceData, type Conversation } from '../../src/types';
 import { clearInvalidRoutes } from '../../src/tripDetails';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
 
@@ -52,6 +52,13 @@ async function open(page: Page) {
 async function compare(page: Page) {
   await page.getByRole('button', { name: '查询公交方案', exact: true }).click();
   await expect(comparison(page).getByRole('radio')).toHaveCount(3);
+}
+
+async function concurrentEdit(localApp: LocalApp, current: Conversation, selectedDay = current.data.selectedDay): Promise<Conversation> {
+  const data = structuredClone(current.data);
+  data.selectedDay = selectedDay;
+  data.draft![0]!.activities[0]!.description = '另一个窗口的新备注';
+  return localApp.request('/conversations/' + current.id, 'PUT', { title: current.title, data, expected_revision: current.revision });
 }
 
 test('显式一次查询；键盘选第二方案、草稿应用、重启导出及恢复', async ({ page, localApp }) => {
@@ -152,7 +159,7 @@ test('一条、空结果、查询失败与保存失败均不伪造或覆盖草�
   expect(await trip.calls()).toHaveLength(1);
 });
 
-test('比较票据在重新查询或并发修订后失效，保留新修订', async ({ page, localApp }) => {
+test('票据失效可直接重查，保存遇到并发修订则重读后才能继续选用', async ({ page, localApp }) => {
   const trip = await setup(page, localApp);
   await open(page); await compare(page);
   await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
@@ -161,15 +168,147 @@ test('比较票据在重新查询或并发修订后失效，保留新修订', as
   await page.getByRole('button', { name: '保存方案到草稿' }).click();
   await expect(comparison(page).getByRole('alert')).toContainText('比较结果已失效');
   await expect(comparison(page).getByRole('radio')).toHaveCount(0);
+  await expect(comparison(page).getByRole('button', { name: '重新读取会话' })).toHaveCount(0);
   expect(await trip.read()).toEqual(current);
   await compare(page);
   await comparison(page).getByRole('radio', { name: /方案 3/ }).check();
-  const data = structuredClone(current.data);
-  data.draft[0].activities[0].description = '另一个窗口的新备注';
-  const newer = await localApp.request('/conversations/' + current.id, 'PUT', { title: current.title, data, expected_revision: current.revision });
+  const newer = await concurrentEdit(localApp, current);
   await page.getByRole('button', { name: '保存方案到草稿' }).click();
-  await expect(comparison(page).getByRole('alert')).toContainText('重新加载');
+  await expect(comparison(page).getByRole('alert')).toContainText('会话已被更新');
+  await expect(comparison(page).getByRole('radio')).toHaveCount(0);
+  const calls = await trip.calls();
+  await comparison(page).getByRole('button', { name: '返回编辑' }).click();
+  await expect(editor(page).getByRole('button', { name: '比较公交方案' })).toBeDisabled();
+  await expect(editor(page).getByRole('button', { name: '切换交通方式' })).toBeDisabled();
+  await editor(page).getByRole('button', { name: '重新读取会话' }).click();
+  await expect(page.getByLabel('备注', { exact: true }).first()).toHaveValue('另一个窗口的新备注');
   expect(await trip.read()).toEqual(newer);
+  expect(await trip.calls()).toEqual(calls);
+  await editor(page).getByRole('button', { name: '比较公交方案' }).click();
+  await compare(page);
+  await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
+  const selection = page.waitForRequest(request => request.url().endsWith('/trip/routes/select'));
+  await comparison(page).getByRole('button', { name: '保存方案到草稿' }).click();
+  expect((await selection).postDataJSON().expected_revision).toBe(newer.revision);
+  await expect(editor(page)).toBeVisible();
+  const saved = await trip.read();
+  expect(saved.revision).toBe(newer.revision + 1);
+  expect(saved.data.draft[0].activities[0]).toEqual(newer.data.draft![0]!.activities[0]);
+  expect(saved.data.draft[0].activities[1].incomingRoute).toMatchObject({ selection: 'user', durationMinutes: 20 });
+  expect(saved.data.days).toEqual(newer.data.days);
+  expect(saved.data.favorites).toEqual(newer.data.favorites);
+});
+
+test('首次比较遇到并发修订，重读后只查询最新日期的相邻活动', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  const newer = await concurrentEdit(localApp, await trip.read(), 2);
+  await comparison(page).getByRole('button', { name: '查询公交方案' }).click();
+  await expect(comparison(page).getByRole('alert')).toContainText('会话已被更新');
+  await comparison(page).getByRole('button', { name: '重新读取会话' }).click();
+  await expect(editor(page)).toBeVisible();
+  expect(await trip.calls()).toHaveLength(0);
+  await editor(page).getByRole('button', { name: '比较公交方案' }).click();
+  await expect(comparison(page)).toContainText('第 2 天');
+  const query = page.waitForRequest(request => request.url().endsWith('/trip/routes/options'));
+  await compare(page);
+  expect((await query).postDataJSON()).toEqual({ expected_revision: newer.revision, activity_id: newer.data.draft![1]!.activities[1]!.id });
+  expect(await trip.calls()).toHaveLength(1);
+  expect(await trip.read()).toEqual(newer);
+});
+
+test('草稿保存冲突后，取消重读保留本地输入，确认后可用新修订继续编辑', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  await page.getByRole('button', { name: '返回编辑' }).click();
+  const newer = await concurrentEdit(localApp, await trip.read());
+  const requests: string[] = [];
+  page.on('request', request => {
+    if (request.url().endsWith('/api/conversations/' + newer.id)) requests.push(request.method());
+  });
+  const note = editor(page).getByLabel('备注', { exact: true }).first();
+  await note.fill('尚未保存的本地备注');
+  const reload = editor(page).getByRole('button', { name: '重新读取会话', exact: true });
+  await reload.click();
+  await expect(editor(page).getByRole('status')).toContainText('替换本地未保存的输入');
+  await editor(page).getByRole('button', { name: '保留本地输入' }).click();
+  await expect(note).toHaveValue('尚未保存的本地备注');
+  expect(requests).toEqual(['PUT']);
+  expect(await trip.read()).toEqual(newer);
+  await reload.click();
+  await editor(page).getByRole('button', { name: '确认重新读取会话' }).click();
+  await expect(note).toHaveValue('另一个窗口的新备注');
+  expect(requests).toEqual(['PUT', 'GET']);
+  await editor(page).getByRole('button', { name: '比较公交方案' }).click();
+  await compare(page);
+  await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
+  await comparison(page).getByRole('button', { name: '保存方案到草稿' }).click();
+  await expect(editor(page)).toBeVisible();
+  expect((await trip.read()).data.draft[0].activities[0]).toEqual(newer.data.draft![0]!.activities[0]);
+});
+
+async function holdReload(page: Page, id: string) {
+  let captured!: () => void;
+  const started = new Promise<void>(resolve => { captured = resolve; });
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let delivered!: () => void;
+  const done = new Promise<void>(resolve => { delivered = resolve; });
+  await page.route('**/api/conversations/' + id, async route => {
+    const response = await route.fetch();
+    captured();
+    await held;
+    try { await route.fulfill({ response }); } finally { delivered(); }
+  }, { times: 1 });
+  return { started, release, done };
+}
+
+test('关闭正在重读的比较窗口后，迟到响应不会替换同一会话的编辑内容', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  const original = await trip.read();
+  await concurrentEdit(localApp, original);
+  await comparison(page).getByRole('button', { name: '查询公交方案' }).click();
+  const held = await holdReload(page, original.id);
+  await comparison(page).getByRole('button', { name: '重新读取会话' }).click();
+  await held.started;
+  try {
+    await expect(comparison(page).getByRole('button', { name: '取消读取' })).toBeVisible();
+    await comparison(page).getByRole('button', { name: '关闭窗口' }).click();
+    await expect(editor(page).getByRole('button', { name: '重新读取会话', exact: true })).toBeEnabled();
+  } finally { held.release(); }
+  await held.done;
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  const note = editor(page).getByLabel('备注', { exact: true }).first();
+  await expect(note).toHaveValue(original.data.draft[0].activities[0].description);
+  await editor(page).getByRole('button', { name: '重新读取会话' }).click();
+  await expect(note).toHaveValue('另一个窗口的新备注');
+});
+
+test('取消重读并切换会话后，迟到的原会话不会替换当前行程', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  const newer = await concurrentEdit(localApp, await trip.read());
+  await comparison(page).getByRole('button', { name: '查询公交方案' }).click();
+  const held = await holdReload(page, newer.id);
+  await comparison(page).getByRole('button', { name: '重新读取会话' }).click();
+  await held.started;
+  try {
+    await comparison(page).getByRole('button', { name: '取消读取' }).click();
+    await expect(comparison(page).getByRole('button', { name: '重新读取会话' })).toBeEnabled();
+    await page.keyboard.press('Escape');
+    await expect(editor(page)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '旅程', exact: true }).click();
+    await page.getByLabel('会话名称').fill('切换后的新旅程');
+    await page.getByRole('button', { name: '创建本地会话' }).click();
+    await expect(page.locator('.trip-title')).toHaveText('切换后的新旅程');
+  } finally { held.release(); }
+  await held.done;
+  await expect(page.locator('.trip-title')).toHaveText('切换后的新旅程');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await trip.read()).toEqual(newer);
+  expect(await trip.calls()).toHaveLength(0);
 });
 
 test('较慢方案先保存草稿，修正时间后应用且不重查选用方案', async ({ page, localApp }) => {
