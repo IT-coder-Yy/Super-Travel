@@ -45,7 +45,7 @@ def _money(amount_fen):
     return f"¥{amount_fen // 100}.{amount_fen % 100:02d}"
 
 
-def _transit(details):
+def _transit(details, selected=False):
     if details is None:
         return "公交详情未查询。"
     transfers, fare = details.get("transferCount"), details.get("fare")
@@ -60,7 +60,7 @@ def _transit(details):
             lines.append(f"{_plain(segment.get('lineName') or '线路待确认')}：{_plain(segment.get('departureStop') or '上车站待确认')} 上车 → {_plain(segment.get('arrivalStop') or '下车站待确认')} 下车")
     if not details["segments"]:
         lines.append("公交分段详情待确认")
-    lines.append("供应商首方案，仅供出行参考；交通参考价不计入活动费用小计")
+    lines.append(("用户选用方案" if selected else "供应商首方案") + "，仅供出行参考；交通参考价不计入活动费用小计")
     return "；".join(lines) + "。"
 
 
@@ -94,7 +94,7 @@ def _route(previous, activity, mode):
         return f"未知 / 待确认；路线记录已过期或查询时间无效，不能作为当前已核验接驳。{evidence}"
     return (f"已查询估算：{MODES[route['mode']]}约 {route['durationMinutes']} 分钟，"
             f"{route['distanceMeters']} 米。{evidence}"
-            + ("\n" + _transit(route.get("transit")) if route["mode"] == "transit" else "")
+            + ("\n" + _transit(route.get("transit"), route.get("selection") == "user") if route["mode"] == "transit" else "")
             + ("\n" + _taxi(route.get("taxiEstimates")) if route["mode"] != "walking" else ""))
 
 

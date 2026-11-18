@@ -1,7 +1,7 @@
 import type { Activity, TripRoute } from '../types'
 import { formatCost, routeDetails, transitFare, transitSegment } from '../tripDetails'
 
-export function TripLeg({ previous, activity, mode }: { previous?: Activity; activity: Activity; mode?: TripRoute['mode'] }) {
+export function TripLeg({ previous, activity, mode, onCompare, compareDisabled }: { previous?: Activity; activity: Activity; mode?: TripRoute['mode']; onCompare?: () => void; compareDisabled?: boolean }) {
   const leg = routeDetails(previous, activity, mode)
   if (!leg) return null
   const { transit, taxiEstimates } = leg
@@ -14,7 +14,7 @@ export function TripLeg({ previous, activity, mode }: { previous?: Activity; act
         {transit.segments.length ? <ol>{transit.segments.map((segment, index) => <li key={index}>{transitSegment(segment)}</li>)}</ol> : <p>公交分段详情待确认</p>}
       </> : <p>公交详情未查询；下次重新规划或更新路线时补充。</p>}
       <p className="trip-leg-note">{leg.detail}</p>
-      <p className="trip-leg-note">供应商首方案，出发前请确认。交通参考价不计入活动费用小计。</p>
+      <p className="trip-leg-note">{activity.incomingRoute?.selection === 'user' ? '用户选用方案' : '供应商首方案'}，出发前请确认。交通参考价不计入活动费用小计。</p>
     </details> : <span className="trip-leg-note">{leg.detail}</span>}
     {taxiEstimates !== undefined && <details className="taxi-details">
       <summary>出租车参考价<span>{taxiEstimates?.length === 1 ? `约 ${formatCost(taxiEstimates[0].amountFen)}` : taxiEstimates?.length ? `${taxiEstimates.length} 项估算` : '暂无估算'}{taxiEstimates?.length ? '（仅供参考，以实际结果为准）' : ''}</span></summary>
@@ -25,5 +25,6 @@ export function TripLeg({ previous, activity, mode }: { previous?: Activity; act
       <p className="trip-leg-note">{leg.detail}</p>
       <p className="trip-leg-note">出租车为另一种出行选择，估算不是订单报价，不与公交票价相加，也不计入活动费用小计。</p>
     </details>}
+    {onCompare && <button id={'compare-trip-route-' + activity.id} type="button" className="text-button route-compare-trigger" disabled={compareDisabled} onClick={onCompare}>比较公交方案</button>}
   </div>
 }

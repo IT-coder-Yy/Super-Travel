@@ -1,12 +1,13 @@
 import { test as base, expect } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
+import { promisify } from 'node:util';
 
 export type LocalApp = {
   url: string;
@@ -68,9 +69,20 @@ export const test = base.extend<{}, { localApp: LocalApp }>({
     };
     try {
       await startBackend();
-      vite = spawn(process.execPath, [resolve(root, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], {
-        cwd: resolve(root, 'client'), windowsHide: true, stdio: 'ignore',
-        env: { ...process.env, VITE_API_BASE: apiBase, VITE_API_TOKEN: token, VITE_DATA_DIR: dataDir },
+      const viteCli = resolve(root, 'node_modules/vite/bin/vite.js');
+      const frontendEnv = { ...process.env, VITE_API_BASE: apiBase, VITE_API_TOKEN: token, VITE_DATA_DIR: dataDir };
+      const production = process.env.STA_UI_BUILD === '1';
+      const outDir = resolve(dataDir, 'frontend');
+      if (production) {
+        // Keep fixture credentials and generated bundles out of the distributable client/dist.
+        const built = await promisify(execFile)(process.execPath, [viteCli, 'build', '--outDir', outDir, '--no-emptyOutDir'], {
+          cwd: resolve(root, 'client'), env: frontendEnv, windowsHide: true, timeout: 60_000,
+        });
+        await writeFile(resolve(dataDir, 'frontend-build.log'), built.stdout + built.stderr, 'utf8');
+        console.log('UI fixture: production build and preview (offline)');
+      }
+      vite = spawn(process.execPath, [viteCli, ...(production ? ['preview', '--outDir', outDir] : []), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], {
+        cwd: resolve(root, 'client'), windowsHide: true, stdio: 'ignore', env: frontendEnv,
       });
       let available = false;
       for (let attempt = 0; attempt < 60; attempt++) {
@@ -97,6 +109,16 @@ export const test = base.extend<{}, { localApp: LocalApp }>({
       if (vite) await exited(vite);
     }
   }, { scope: 'worker' }],
+  // Default business regression is offline; keep the existing explicit photo opt-in.
+  // A test's page.route fixture may supply a captured response instead.
+  context: async ({ context }, use) => {
+    await context.route('**/*', route => {
+      const host = new URL(route.request().url()).hostname;
+      const livePhoto = process.env.STA_LIVE_PHOTOS === '1' && ['thumb.wikimedia.org', 'upload.wikimedia.org'].includes(host);
+      return ['127.0.0.1', 'localhost', '[::1]'].includes(host) || livePhoto ? route.continue() : route.abort('blockedbyclient');
+    });
+    await use(context);
+  },
   baseURL: async ({ localApp }, use) => { await use(localApp.url); },
 });
 export { expect };

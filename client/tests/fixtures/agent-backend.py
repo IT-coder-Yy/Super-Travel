@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sys
 
-for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_MCP_URL", "AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"):
+for name in ("STA_MODEL_API_KEY", "STA_MODEL_NAME", "STA_MODEL_BASE_URL", "STA_MCP_URL", "STA_SHARED_TOOLS_URL", "AMAP_MAPS_API_KEY", "BAIDU_MAP_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"):
     os.environ.pop(name, None)
 
 from supertravel_server import access, agent_service, conversations, main
@@ -98,12 +98,29 @@ class FixtureTools:
         self.pending = []
         self.cancelled = 0
         self.finished = 0
+        self.route_profile = None
+        self.route_calls = []
 
     async def list_tools(self):
-        return [{"name": "fixture_weather", "description": "固定的离线测试天气工具，不提供真实资料", "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": False}},
+        routes = [{"name": "baidu_map_directions", "inputSchema": {"type": "object"}}] if self.route_profile else []
+        return [*routes, {"name": "fixture_weather", "description": "固定的离线测试天气工具，不提供真实资料", "inputSchema": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"], "additionalProperties": False}},
                 {"name": "baidu_map_search_places", "description": "固定地点数据，不提供真实查询", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "region": {"type": "string"}}}}]
 
     async def call_tool(self, _name, _arguments):
+        if _name == "baidu_map_directions" and self.route_profile:
+            self.route_calls.append(dict(_arguments))
+            if self.route_profile == "quota":
+                raise ToolError("tool_quota", False, "固定离线夹具：额度不足")
+            if self.route_profile.startswith("options"):
+                count = 0 if self.route_profile == "options-empty" else 1 if self.route_profile == "options-one" else 5
+                paths = [{"duration": 4500 if self.route_profile == "options-conflict" and i == 1 else (i + 1) * 600,
+                          "distance": (i + 1) * 1000, "price": [9, 0, 2.29, 3, 4][i], "steps": [[{"type": 3,
+                          "vehicle": {"name": f"离线方案{i + 1}号线𠮷🏞️", "type": 1, "start_name": "固定起点站", "end_name": "固定终点站"}}]]} for i in range(count)]
+                return {"structuredContent": {"status": 0, "result": {"routes": paths,
+                    "taxi": {"detail": [{"total_price": 0, "desc": "白天"}], "remark": "离线样本，不是实际订单报价。"}}}}
+            duration = 4500 if self.route_profile == "conflict" else 780
+            return {"structuredContent": {"status": 0, "result": {"routes": [
+                {"duration": duration, "distance": 1200, "price": 0, "steps": []}]}}}
         if _name == "baidu_map_search_places":
             query = _arguments.get("query", "")
             if "测试额度不足" in query:
@@ -173,8 +190,14 @@ def create_app(data_dir, token):
     @app.get("/api/test-fixture/state")
     async def state():
         return {"pending": len(fixture.pending), "cancelled": fixture.cancelled, "finished": fixture.finished,
-                "storage_errors": storage_errors,
+                "storage_errors": storage_errors, "route_calls": fixture.route_calls,
                 "sessions": [{"status": session.snapshot()["status"], "error": session.snapshot()["error"], "task_done": session._task.done() if session._task else None} for session in app.state.agents.sessions.values()]}
+
+    @app.post("/api/test-fixture/routes")
+    async def routes(configuration: dict):
+        fixture.route_profile = configuration.get("profile")
+        fixture.route_calls.clear()
+        return {"configured": True}
 
     @app.post("/api/test-fixture/release")
     async def release():

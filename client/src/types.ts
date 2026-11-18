@@ -8,7 +8,8 @@ export type TripMeta = { destination: string; summary: string; generatedAt: stri
 export type TransitSegment = { mode: 'walking' | 'bus' | 'subway' | 'other'; lineName?: string | null; departureStop?: string | null; arrivalStop?: string | null }
 export type TransitDetails = { segments: TransitSegment[]; transferCount?: number | null; fare?: { amountFen: number; currency: 'CNY' } | null }
 export type TaxiEstimate = { amountFen: number; currency: 'CNY'; kind: 'estimate'; label?: string | null; note?: string | null }
-export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null; transit?: TransitDetails | null; taxiEstimates?: TaxiEstimate[] | null }
+export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null; transit?: TransitDetails | null; taxiEstimates?: TaxiEstimate[] | null; selection?: 'user' | null }
+export type TripRouteOptions = { revision: number; options: { option_id: string; route: TripRoute }[]; reason?: string }
 export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
 export type Candidate = Omit<Activity, 'time' | 'x' | 'y' | 'incomingRoute' | 'place'> & { place: Place; destination: string }
 export type CandidatePlaceSelection = Pick<PlaceSelection, 'selection_id' | 'duration_minutes' | 'description'>
@@ -100,6 +101,7 @@ function validRoute(route: TripRoute): boolean {
     (route.provider == null || ['baidu', 'amap'].includes(route.provider)) &&
     (route.queriedAt == null || typeof route.queriedAt === 'string') && (route.reason == null || typeof route.reason === 'string') &&
     (route.status !== 'verified' || route.durationMinutes != null) &&
+    (route.selection == null || route.selection === 'user' && route.mode === 'transit' && route.status === 'verified') &&
     (route.transit == null || route.mode === 'transit' && route.status === 'verified' && validTransit(route.transit)) &&
     (route.taxiEstimates == null || route.mode !== 'walking' && route.status === 'verified' && validTaxi(route.taxiEstimates))
 }

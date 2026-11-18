@@ -44,7 +44,19 @@ def _payloads(result):
                 continue
 
 
-def _first_route(result, provider, mode):
+class RouteSelectionExpired(ValueError):
+    pass
+
+
+def route_contexts(days):
+    """Activity identity and full places, excluding editable times/notes/costs."""
+    return {target["id"]: (day.get("day"), origin["id"], target["id"], origin.get("place"), target.get("place"))
+            for day in days if isinstance(day, dict) and isinstance(day.get("activities"), list)
+            for origin, target in zip(day["activities"], day["activities"][1:])
+            if isinstance(origin, dict) and isinstance(target, dict) and isinstance(origin.get("id"), str) and isinstance(target.get("id"), str)} if isinstance(days, list) else {}
+
+
+def _route_sets(result, provider, mode):
     for payload in _payloads(result):
         if not isinstance(payload, dict):
             continue
@@ -52,26 +64,48 @@ def _first_route(result, provider, mode):
             continue
         if provider == "baidu":
             root = payload.get("result", {})
-            paths = root.get("routes", []) if isinstance(root, dict) else []
+            paths = root.get("routes") if isinstance(root, dict) else None
         else:
             root = payload.get("route", payload)
-            paths = root.get("transits" if mode == "transit" else "paths", []) if isinstance(root, dict) else []
-        if not isinstance(paths, list) or not paths or not isinstance(paths[0], dict):
-            continue
-        path = paths[0]
-        seconds = path.get("duration")
-        if seconds is None and isinstance(path.get("cost"), dict):
-            seconds = path["cost"].get("duration")
-        distance = path.get("distance")
-        if isinstance(seconds, bool) or isinstance(distance, bool):
-            continue
-        try:
-            seconds, distance = float(seconds), float(distance)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(seconds) and math.isfinite(distance) and 0 < seconds <= 172800 and 0 <= distance <= 3000000:
-            return path, (math.ceil(seconds / 60), math.ceil(distance)), root
+            paths = root.get("transits" if mode == "transit" else "paths") if isinstance(root, dict) else None
+        if isinstance(paths, list):
+            yield paths, root
+
+
+def _path_metrics(path):
+    if not isinstance(path, dict):
+        return None
+    seconds = path.get("duration")
+    if seconds is None and isinstance(path.get("cost"), dict):
+        seconds = path["cost"].get("duration")
+    distance = path.get("distance")
+    if isinstance(seconds, bool) or isinstance(distance, bool):
+        return None
+    try:
+        seconds, distance = float(seconds), float(distance)
+    except (TypeError, ValueError):
+        return None
+    if math.isfinite(seconds) and math.isfinite(distance) and 0 < seconds <= 172800 and 0 <= distance <= 3000000:
+        return math.ceil(seconds / 60), math.ceil(distance)
     return None
+
+
+def _first_route(result, provider, mode):
+    for paths, root in _route_sets(result, provider, mode):
+        metrics = _path_metrics(paths[0]) if paths else None
+        if metrics:
+            return paths[0], metrics, root
+    return None
+
+
+def _transit_routes(result, provider):
+    # One response representation only; do not combine structured/text alternatives.
+    for paths, root in _route_sets(result, provider, "transit"):
+        for path in paths:
+            metrics = _path_metrics(path)
+            if metrics:
+                yield path, metrics, root
+        return
 
 
 def _metrics(result, provider, mode):
@@ -173,7 +207,7 @@ def _transit_details(path, provider):
     return details
 
 
-async def query_route(tools, origin, destination, mode, city):
+async def _query_routes(tools, origin, destination, mode, city, *, alternatives=False):
     if mode not in MODES:
         raise ToolError("tool_arguments", False, "交通方式需要为步行、驾车或公交。")
     route = unknown_route(origin, destination, mode)
@@ -184,7 +218,7 @@ async def query_route(tools, origin, destination, mode, city):
     if (provider != destination["provider"] or not source or not target
             or source["coordinateSystem"] != expected or target["coordinateSystem"] != expected):
         route["reason"] = "缺少同一地图服务的原始坐标，请重新查询地点；交通耗时未知。"
-        return route
+        return [], route
     try:
         async with asyncio.timeout(12):
             names = {row["name"]: row for row in await tools.list_tools()}
@@ -192,7 +226,7 @@ async def query_route(tools, origin, destination, mode, city):
             definition = names.get(name)
             if not definition:
                 route["reason"] = "该地图的路线服务暂不可用，交通耗时未知。"
-                return route
+                return [], route
             def coordinate(location):
                 lng, lat = location["longitude"], location["latitude"]
                 return f"{lat:.6f},{lng:.6f}" if provider == "baidu" else f"{lng:.6f},{lat:.6f}"
@@ -203,22 +237,45 @@ async def query_route(tools, origin, destination, mode, city):
                 arguments.update(city=city, cityd=city)
             validate(arguments, definition["inputSchema"], registry=Registry())
             result = await tools.call_tool(name, arguments)
-            selected = None if result.get("isError") else _first_route(result, provider, mode)
-            if selected is None:
+            if result.get("isError"):
+                selected = []
+            elif alternatives:
+                selected = _transit_routes(result, provider)
+            else:
+                first = _first_route(result, provider, mode)
+                selected = [first] if first else []
+            routes = []
+            for path, metrics, root in selected:
+                value = {**route, "status": "verified", "provider": provider, "durationMinutes": metrics[0],
+                         "distanceMeters": metrics[1], "reason": "查询时的路线估算，不是出行当天的交通保证。"}
+                if mode in ("transit", "driving"):
+                    value["taxiEstimates"] = _taxi_estimates(root, provider)
+                if mode == "transit":
+                    value["transit"] = _transit_details(path, provider)
+                if value not in routes:
+                    routes.append(value)
+                if len(routes) == (3 if alternatives else 1):
+                    break
+            if not routes:
                 route["reason"] = "路线服务没有返回有效耗时，不能确认接驳是否可行。"
-                return route
+                return [], route
     except TimeoutError:
         route["reason"] = "路线查询超时，交通耗时未知。"
-        return route
+        return [], route
     except ToolError as error:
         route["reason"] = "路线服务额度或权限不可用，交通耗时未知。" if error.code in ("tool_quota", "tool_auth", "tool_rate_limit") else "路线查询失败，交通耗时未知，请稍后重试。"
-        return route
+        return [], route
     except Exception:
         route["reason"] = "路线服务参数或响应不兼容，交通耗时未知。"
-        return route
-    path, metrics, root = selected
-    if mode in ("transit", "driving"):
-        route["taxiEstimates"] = _taxi_estimates(root, provider)
-    if mode == "transit":
-        route["transit"] = _transit_details(path, provider)
-    return {**route, "status": "verified", "provider": provider, "durationMinutes": metrics[0], "distanceMeters": metrics[1], "reason": "查询时的路线估算，不是出行当天的交通保证。"}
+        return [], route
+    return routes, route
+
+
+async def query_route(tools, origin, destination, mode, city):
+    routes, unknown = await _query_routes(tools, origin, destination, mode, city)
+    return routes[0] if routes else unknown
+
+
+async def query_transit_options(tools, origin, destination, city):
+    routes, unknown = await _query_routes(tools, origin, destination, "transit", city, alternatives=True)
+    return routes, None if routes else unknown["reason"]

@@ -113,6 +113,7 @@ current_candidates 是未排期候选，不属于 available_places。只有用�
 每次查询优先百度，查询词明确、目的地已由服务端固定。一次查询可返回多个候选，无需逐个重复查询。
 trip_request.map_provider 非空时仅使用其指定地图，额度不足也不能换服务。stops_per_day 非空时每天必须恰好该数量，不额外添加餐饮点。
 确定活动顺序后，用 query_trip_route 查询每天相邻地点间交通，mode须为trip_request.transport_mode；仅传place_id，不传或转换坐标。已有相同地点/方式的有效结果可复用。
+current_trip 中 incomingRoute.selection=user 是用户选用的公交方案：日期、相邻活动 ID、完整地点和交通方式不变且新鲜时原样保留，无需重新查询，不用默认首方案替换。同一对地点在不同天的选择各自独立；只改时间或备注不改变选择。用户选用方案过期时请反馈需要在编辑中重新比较并选择，不能自动选回首方案。
 路线status=unknown代表未核实，须在行程中保留未知项，不编造耗时或反复请求同一失败路线。已知耗时要留足接驳时间；不足时修订时间或用report_plan_issue反馈冲突。
 修改行程时保留未要求改变的安排。提交已有活动必须把 current_trip 中的 id 填入 activity_id，跨日移动也不变；同一 POI 不同天的活动各自有独立 id，不能混用，不能重复引用或把旧 id 绑定到另一个 place_id。新增活动不填 activity_id。
 当前活动仅以 current_trip.days[].activities 为准；旧标题、副标题、摘要、历史消息或 available_places 中出现的地点都不代表当前日程含有该活动，不得据此恢复已移动或删除的活动。

@@ -1,9 +1,9 @@
 import { getBackendConnection } from './desktop'
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { ActivityDeletePreview, ActivityMove, CandidatePlaceSelection, CandidateSlots, Conversation, ConversationSummary, PlaceCategory, PlaceSearchResult, PlaceSelection, RecoveryOption, TravelPreferences, TravelPreferencesResponse, TripExportFormat, TripExportSnapshot, WorkspaceData } from './types'
+import type { ActivityDeletePreview, ActivityMove, CandidatePlaceSelection, CandidateSlots, Conversation, ConversationSummary, PlaceCategory, PlaceSearchResult, PlaceSelection, RecoveryOption, TravelPreferences, TravelPreferencesResponse, TripExportFormat, TripExportSnapshot, TripRoute, TripRouteOptions, WorkspaceData } from './types'
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) { super(message) }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -15,7 +15,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(body?.detail?.message || (typeof body?.detail === 'string' ? body.detail : `本地服务请求失败（${response.status}）`), response.status)
+    const detail = body?.detail
+    throw new ApiError(detail?.message || (typeof detail === 'string' ? detail : `本地服务请求失败（${response.status}）`),
+      response.status, typeof detail?.code === 'string' ? detail.code : undefined)
   }
   return response.json() as Promise<T>
 }
@@ -27,6 +29,12 @@ export const readConversation = (id: string, signal?: AbortSignal) => request<Co
 export const sendAgentMessage = (id: string, content: string, messageId: string) => request<Conversation>(`/conversations/${encodeURIComponent(id)}/messages`, { method: 'POST', body: JSON.stringify({ message_id: messageId, content }) })
 export const cancelAgent = (id: string) => request<Conversation>(`/conversations/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 export const applyTripDraft = (current: ConversationSummary) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}/trip/apply`, { method: 'POST', signal: AbortSignal.timeout(45_000), body: JSON.stringify({ expected_revision: current.revision }) })
+export const setTripTransport = (current: ConversationSummary, mode: TripRoute['mode']) => request<Conversation>(
+  '/conversations/' + encodeURIComponent(current.id) + '/trip/transport', { method: 'POST', body: JSON.stringify({ expected_revision: current.revision, mode }) })
+export const compareTripRoutes = (current: ConversationSummary, activityId: string, signal: AbortSignal) => request<TripRouteOptions>(
+  '/conversations/' + encodeURIComponent(current.id) + '/trip/routes/options', { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]), body: JSON.stringify({ expected_revision: current.revision, activity_id: activityId }) })
+export const selectTripRoute = (current: ConversationSummary, optionId: string) => request<Conversation>(
+  '/conversations/' + encodeURIComponent(current.id) + '/trip/routes/select', { method: 'POST', body: JSON.stringify({ expected_revision: current.revision, option_id: optionId }) })
 export const exportTrip = (current: ConversationSummary, signal: AbortSignal, format: TripExportFormat = 'markdown') => request<TripExportSnapshot>(`/conversations/${encodeURIComponent(current.id)}/trip/export`, { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]), body: JSON.stringify({ expected_revision: current.revision, format }) })
 export const restorePreviousTrip = (current: ConversationSummary) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}/trip/restore`, { method: 'POST', body: JSON.stringify({ expected_revision: current.revision }) })
 export const resolveTripPlace = (current: ConversationSummary, activityId: string, query: string) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}/resolve-place`, { method: 'POST', signal: AbortSignal.timeout(75_000), body: JSON.stringify({ expected_revision: current.revision, activity_id: activityId, query }) })

@@ -10,6 +10,7 @@ export function useConversations(notify: (message: string, error?: boolean) => v
   const dataRef = useRef(workspace)
   const currentRef = useRef<ConversationSummary | null>(null)
   const queueRef = useRef<Promise<unknown>>(Promise.resolve())
+  const connectionRef = useRef<Promise<void> | null>(null)
   const dirtyRef = useRef(false)
   const [current, setCurrent] = useState<ConversationSummary | null>(null)
   const [history, setHistory] = useState<ConversationSummary[]>([])
@@ -38,6 +39,7 @@ export function useConversations(notify: (message: string, error?: boolean) => v
   }
 
   async function persist(next: WorkspaceData = dataRef.current): Promise<void> {
+    if (connectionRef.current) throw new Error('本地会话仍在加载，请稍后再保存。')
     if (!ready) throw new Error('本地服务尚未连接，当前修改还没有保存。请在设置中重新连接。')
     setSaving(true)
     const operation = queueRef.current.catch(() => undefined).then(() => writeWorkspace(next))
@@ -46,20 +48,30 @@ export function useConversations(notify: (message: string, error?: boolean) => v
   }
 
 
-  async function connect() {
-    setLoading(true); setConnectionError('')
-    try {
-      const connection = await getBackendConnection()
-      const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
-      setRecoveryOptions(damaged)
-      setDataDir(connection.dataDir); setHistory(items); setReady(true)
-      if (!currentRef.current && !dirty && items.length > 0) {
-        const latest = await readConversation(items[0]!.id)
-        if (!isWorkspaceData(latest.data)) throw new Error('本地会话格式不兼容，原文件已保留。请创建新会话或恢复备份。')
-        setDocument(latest); change(latest.data, false)
-      }
-    } catch (error) { setReady(false); setConnectionError(describeError(error)) }
-    finally { setLoading(false) }
+  function connect(): Promise<void> {
+    // StrictMode and reconnect callers share one load; readiness includes the saved conversation.
+    if (connectionRef.current) return connectionRef.current
+    setReady(false); setLoading(true); setConnectionError('')
+    const operation = (async () => {
+      try {
+        const connection = await getBackendConnection()
+        const [items, damaged] = await Promise.all([listConversations(), listRecoveryOptions()])
+        setRecoveryOptions(damaged)
+        setDataDir(connection.dataDir); setHistory(items)
+        if (!currentRef.current && !dirtyRef.current && items.length > 0) {
+          const latest = await readConversation(items[0]!.id)
+          // A user may have selected a history entry while the initial read was pending.
+          if (!currentRef.current && !dirtyRef.current) {
+            if (!isWorkspaceData(latest.data)) throw new Error('本地会话格式不兼容，原文件已保留。请创建新会话或恢复备份。')
+            setDocument(latest); change(latest.data, false)
+          }
+        }
+        setReady(true)
+      } catch (error) { setReady(false); setConnectionError(describeError(error)) }
+      finally { connectionRef.current = null; setLoading(false) }
+    })()
+    connectionRef.current = operation
+    return operation
   }
 
 
