@@ -7,10 +7,11 @@ type Props = {
   days: TripDay[]
   currentMode: TripRoute['mode']
   onSave: (mode: TripRoute['mode']) => Promise<void>
+  onConflict: (reason: unknown) => boolean
   onCancel: () => void
 }
 
-export function TripTransport({ days, currentMode, onSave, onCancel }: Props) {
+export function TripTransport({ days, currentMode, onSave, onConflict, onCancel }: Props) {
   const [mode, setMode] = useState(currentMode)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -26,7 +27,7 @@ export function TripTransport({ days, currentMode, onSave, onCancel }: Props) {
     if (!changed || savingRef.current) return
     savingRef.current = true; setSaving(true); setError('')
     try { await onSave(mode) }
-    catch (reason) { if (mounted.current) setError(reason instanceof Error ? reason.message : '交通方式未保存，请重试。') }
+    catch (reason) { if (mounted.current && !onConflict(reason)) setError(reason instanceof Error ? reason.message : '交通方式未保存，请重试。') }
     finally { savingRef.current = false; if (mounted.current) setSaving(false) }
   }
 

@@ -10,10 +10,11 @@ type Props = {
   previous: Activity
   activity: Activity
   onSave: (optionId: string) => Promise<void>
+  onConflict: (reason: unknown) => boolean
   onCancel: () => void
 }
 
-export function RouteComparison({ conversation, day, previous, activity, onSave, onCancel }: Props) {
+export function RouteComparison({ conversation, day, previous, activity, onSave, onConflict, onCancel }: Props) {
   const [result, setResult] = useState<TripRouteOptions | null>(null)
   const [selected, setSelected] = useState('')
   const [error, setError] = useState('')
@@ -39,11 +40,11 @@ export function RouteComparison({ conversation, day, previous, activity, onSave,
     try {
       const next = await compareTripRoutes(conversation, activity.id, request.signal)
       if (mounted.current && !request.signal.aborted) {
-        if (next.revision !== conversation.revision) throw new Error('草稿已变化，请返回编辑后重新比较。')
+        if (next.revision !== conversation.revision) throw new ApiError('会话已被更新。', 409, 'revision_conflict')
         setResult(next)
       }
     } catch (reason) {
-      if (mounted.current && !request.signal.aborted) setError(reason instanceof Error && reason.name === 'TimeoutError' ? '查询超时，请重试；原草稿保持不变。' : reason instanceof Error ? reason.message : '查询未完成，请重试。')
+      if (mounted.current && !request.signal.aborted && !onConflict(reason)) setError(reason instanceof Error && reason.name === 'TimeoutError' ? '查询超时，请重试；原草稿保持不变。' : reason instanceof Error ? reason.message : '查询未完成，请重试。')
     } finally { controller.current = null; if (mounted.current) setLoading(false) }
   }
 
@@ -52,8 +53,8 @@ export function RouteComparison({ conversation, day, previous, activity, onSave,
     savingRef.current = true; setSaving(true); setError('')
     try { await onSave(selected) }
     catch (reason) {
-      if (mounted.current) {
-        if (reason instanceof ApiError && reason.status === 409) { setResult(null); setSelected('') }
+      if (mounted.current && !onConflict(reason)) {
+        if (reason instanceof ApiError && reason.code === 'route_option_expired') { setResult(null); setSelected('') }
         setError(reason instanceof Error ? reason.message : '方案未保存，请重试。')
       }
     } finally { savingRef.current = false; if (mounted.current) setSaving(false) }

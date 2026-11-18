@@ -3,7 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { ActivityDeletePreview, ActivityMove, CandidatePlaceSelection, CandidateSlots, Conversation, ConversationSummary, PlaceCategory, PlaceSearchResult, PlaceSelection, RecoveryOption, TravelPreferences, TravelPreferencesResponse, TripExportFormat, TripExportSnapshot, TripRoute, TripRouteOptions, WorkspaceData } from './types'
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) { super(message) }
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -15,7 +15,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   })
   if (!response.ok) {
     const body = await response.json().catch(() => null)
-    throw new ApiError(body?.detail?.message || (typeof body?.detail === 'string' ? body.detail : `本地服务请求失败（${response.status}）`), response.status)
+    const detail = body?.detail
+    throw new ApiError(detail?.message || (typeof detail === 'string' ? detail : `本地服务请求失败（${response.status}）`),
+      response.status, typeof detail?.code === 'string' ? detail.code : undefined)
   }
   return response.json() as Promise<T>
 }
