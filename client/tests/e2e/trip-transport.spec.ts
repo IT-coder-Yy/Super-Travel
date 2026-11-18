@@ -117,7 +117,7 @@ test('键盘取消、草稿保存与正式应用保留用户字段，并可重�
   expect((await trip.read()).data.days).toEqual(trip.original.data.days);
 });
 
-test('保存失败保留选择；并发修订拒绝覆盖，返回重读后可继续', async ({ page, localApp }) => {
+test('交通方式保存冲突后可重试读取，会话更新后继续保存所选方式', async ({ page, localApp }) => {
   const trip = await setup(page, localApp);
   await open(page);
   await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
@@ -131,15 +131,50 @@ test('保存失败保留选择；并发修订拒绝覆盖，返回重读后可�
   newerData.draft[0].activities[0].description = '另一个窗口刚保存的备注';
   const newer = await localApp.request('/conversations/' + pending.id, 'PUT', { title: pending.title, data: newerData, expected_revision: pending.revision });
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
-  await expect(form(page).getByRole('alert')).toContainText('重新加载');
+  await expect(form(page).getByRole('alert')).toContainText('会话已被更新');
   expect(await trip.read()).toEqual(newer);
-  await page.getByRole('button', { name: '返回编辑', exact: true }).click();
-  await page.reload();
-  await open(page);
+  await page.route('**/api/conversations/' + pending.id, route => route.fulfill({
+    status: 503, json: { detail: { message: '固定离线读取失败，请重试。' } },
+  }), { times: 1 });
+  const reload = form(page).getByRole('button', { name: '重新读取会话' });
+  await reload.click();
+  await expect(form(page).getByRole('alert')).toContainText('读取失败');
+  expect(await trip.read()).toEqual(newer);
+  await reload.click();
+  await expect(editor(page).getByLabel('备注', { exact: true }).first()).toHaveValue('另一个窗口刚保存的备注');
+  expect(await trip.read()).toEqual(newer);
+  await editor(page).getByRole('button', { name: '切换交通方式' }).click();
   await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
+  const save = page.waitForRequest(request => request.url().endsWith('/trip/transport'));
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
+  expect((await save).postDataJSON()).toEqual({ expected_revision: newer.revision, mode: 'transit' });
   await expect(editor(page)).toBeVisible();
-  expect((await trip.read()).data.draft[0].activities[0].description).toBe('另一个窗口刚保存的备注');
+  const saved = await trip.read();
+  expect(saved.data.draft[0].activities[0]).toEqual(newer.data.draft[0].activities[0]);
+  expect(saved.data.days).toEqual(newer.data.days);
+  expect(saved.data.draftTrip.transportMode).toBe('transit');
+  expect(await trip.calls()).toHaveLength(0);
+});
+
+test('进入交通表单前草稿已被另一窗口放弃，确认重读后显示正式行程', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  await form(page).getByRole('button', { name: '返回编辑' }).click();
+  const pending = await trip.read();
+  const discarded = await localApp.request('/conversations/' + pending.id + '/trip/discard', 'POST', { expected_revision: pending.revision });
+  // Keep the debounce from firing so that this conflict comes from the form's save-before-open.
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 1000)));
+  const note = editor(page).getByLabel('备注', { exact: true }).first();
+  await note.fill('打开交通表单前的输入');
+  await editor(page).getByRole('button', { name: '切换交通方式' }).click();
+  await expect(editor(page).getByRole('alert')).toContainText('会话已被更新');
+  await expect(note).toHaveValue('打开交通表单前的输入');
+  await editor(page).getByRole('button', { name: '重新读取会话', exact: true }).click();
+  await editor(page).getByRole('button', { name: '确认重新读取会话' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑当天行程' })).toBeEnabled();
+  expect(await trip.read()).toEqual(discarded);
   expect(await trip.calls()).toHaveLength(0);
 });
 
