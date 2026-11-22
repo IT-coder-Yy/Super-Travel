@@ -1,12 +1,11 @@
 """Candidate snapshot helpers and bounded, non-reordering insertion checks."""
 from copy import deepcopy
 import asyncio
-import json
 
 from pydantic import Field, model_validator
 
 from supertravel_server.trips import ActivityCost, Place, StrictModel
-from supertravel_server.trip_routes import query_route, route_fresh, unknown_route
+from supertravel_server.trip_routes import query_route, route_cache_key, route_fresh, unknown_route
 
 
 class Candidate(StrictModel):
@@ -100,7 +99,7 @@ async def insertion_options(tools, activities, candidate, duration, meta):
 
     async def route(origin, target):
         nonlocal exhausted
-        key = json.dumps([origin, target, mode], sort_keys=True, ensure_ascii=False)
+        key = route_cache_key(origin, target, mode)
         if key not in cache:
             if exhausted:
                 value = unknown_route(origin, target, mode, "本次空档核查超时，交通耗时未知。")

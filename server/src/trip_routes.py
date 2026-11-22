@@ -53,6 +53,10 @@ class RouteSelectionExpired(ValueError):
     pass
 
 
+def route_cache_key(origin, destination, mode):
+    return json.dumps((origin, destination, mode), sort_keys=True, ensure_ascii=False)
+
+
 def route_contexts(days):
     """Activity identity and full places, excluding editable times/notes/costs."""
     return {target["id"]: (day.get("day"), origin["id"], target["id"], origin.get("place"), target.get("place"))
