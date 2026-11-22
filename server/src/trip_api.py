@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from supertravel_server.candidates import (Candidate, active_candidates, as_candidate, has_draft, insertion_options,
                                 minutes, validate_candidate_snapshot)
 from supertravel_server.mcp_client import ToolError
-from supertravel_server.trips import ActivityCost, IncomingRoute, Place, TripResearch, TripResult, TripTimingError, validate_result
-from supertravel_server.trip_routes import RouteSelectionExpired, query_transit_options, route_contexts, route_fresh, route_matches, unknown_route
+from supertravel_server.trips import (ActivityCost, IncomingRoute, IncomingTransportOverride, Place, TransportMode,
+                                      TripResearch, TripResult, TripTimingError, validate_result)
+from supertravel_server.trip_routes import (RouteSelectionExpired, leg_transport_mode, query_transit_options, route_contexts,
+                                           route_fresh, route_matches, unknown_route)
 
 
 class TripRevision(BaseModel):
@@ -22,7 +24,7 @@ class TripRevision(BaseModel):
 
 
 class TripTransport(TripRevision):
-    mode: Literal["walking", "driving", "transit"]
+    mode: TransportMode
 
 
 class ResolvePlace(TripRevision):
@@ -46,6 +48,10 @@ class SelectPlace(TripRevision):
 
 class TripActivityChange(TripRevision):
     activity_id: str = Field(min_length=1, max_length=200)
+
+
+class LegTransport(TripActivityChange):
+    mode: TransportMode | None
 
 
 class CandidateChange(TripRevision):
@@ -87,16 +93,52 @@ def _activities(days):
     return [activity for activities in _day_activities(days) for activity in activities]
 
 
+def _active_days(data):
+    return data["draft"] if data.get("draft") is not None else data.get("days", [])
+
+
+def _preserve_leg_overrides(previous_days, proposed_days, error_type):
+    if not proposed_days:
+        return
+    old = {item["id"]: item["incomingTransportOverride"] for item in _activities(previous_days)
+           if item.get("incomingTransportOverride") is not None}
+    before, after = route_contexts(previous_days), route_contexts(proposed_days)
+    for item in _activities(proposed_days):
+        identifier = item.get("id")
+        expected = old.get(identifier) if identifier in after and before.get(identifier) == after[identifier] else None
+        if "incomingTransportOverride" not in item:
+            # Older clients omit this server-owned field on otherwise unchanged legs.
+            if expected is not None:
+                item["incomingTransportOverride"] = deepcopy(expected)
+            continue
+        value = item["incomingTransportOverride"]
+        if value is not None:
+            try:
+                IncomingTransportOverride.model_validate(value)
+            except ValueError:
+                raise error_type(422, "route_mode_protected", "单段方式或绑定的日程无效。") from None
+        if value != expected:
+            raise error_type(422, "route_mode_protected", "请通过单段方式操作修改当前接驳。")
+
+
 def guard_trip_write(previous, proposed, error_type):
     if proposed.get("candidates", []) != previous.get("candidates", []):
         raise error_type(422, "trip_protected", "候选池正式版需要通过应用草稿或恢复操作保存。")
     try:
         validate_candidate_snapshot(proposed.get("days"), proposed.get("candidates", []))
         if has_draft(proposed):
-            validate_candidate_snapshot(proposed.get("draft") if proposed.get("draft") is not None else proposed.get("days"), active_candidates(proposed))
+            validate_candidate_snapshot(_active_days(proposed), active_candidates(proposed))
     except (ValueError, TypeError, AttributeError):
         raise error_type(422, "candidate_invalid", "候选字段不完整、包含排期字段或与日程活动 ID 重复。") from None
-    active_days = previous.get("draft") if previous.get("draft") is not None else previous.get("days")
+    active_days = _active_days(previous)
+    if previous.get("draft") is not None and proposed.get("draft") is None:
+        if any(item.get("incomingTransportOverride") for days in (active_days, previous.get("days")) for item in _activities(days)):
+            raise error_type(422, "route_mode_protected", "请通过放弃草稿操作撤销单段方式修改。")
+    _preserve_leg_overrides(previous.get("days"), proposed.get("days"), error_type)
+    _preserve_leg_overrides(active_days, proposed.get("draft"), error_type)
+    old_snapshot, new_snapshot = previous.get("previousTrip"), proposed.get("previousTrip")
+    if isinstance(old_snapshot, dict) and isinstance(new_snapshot, dict):
+        _preserve_leg_overrides(old_snapshot.get("days"), new_snapshot.get("days"), error_type)
     scheduled_ids = {item.get("id") for item in _activities(active_days)}
     prior_pool = active_candidates(previous)
     for activity in _activities(proposed.get("draft")):
@@ -121,9 +163,6 @@ def guard_trip_write(previous, proposed, error_type):
     known.extend(item["place"] for item in prior_candidates)
     known_routes = [activity["incomingRoute"] for days in (previous.get("days"), previous.get("draft"), (previous.get("previousTrip") or {}).get("days"))
                     for activity in _activities(days) if activity.get("incomingRoute")]
-    route_sources = [(target.get("incomingRoute"), origin.get("place"), target.get("place"))
-                     for days in (previous.get("days"), previous.get("draft"), (previous.get("previousTrip") or {}).get("days"))
-                     for activities in _day_activities(days) for origin, target in zip(activities, activities[1:])]
     for activity in _activities(proposed.get("days")) + _activities(proposed.get("draft")) + active_candidates(proposed):
         place = activity.get("place")
         if place is not None and (not isinstance(place, dict) or not isinstance(place.get("id"), str) or place not in known or activity.get("title") != place.get("name")):
@@ -138,33 +177,25 @@ def guard_trip_write(previous, proposed, error_type):
                     raise ValueError
         except (ValueError, TypeError):
             raise error_type(422, "trip_evidence", "费用需要为用户填写的人民币金额；交通数据只能来自路线查询。") from None
-    if proposed.get("draft") is not None:
-        old_contexts, new_contexts = route_contexts(active_days), route_contexts(proposed["draft"])
-        old_choices = {activity["id"]: activity["incomingRoute"] for activity in _activities(active_days)
-                       if (activity.get("incomingRoute") or {}).get("selection") == "user"}
-        for activity in _activities(proposed["draft"]):
+    for before, after in ((previous.get("days"), proposed.get("days")), (active_days, proposed.get("draft"))):
+        old_contexts, new_contexts = route_contexts(before), route_contexts(after)
+        old_routes = {item.get("id"): item["incomingRoute"] for item in _activities(before) if item.get("incomingRoute")}
+        for activity in _activities(after):
             identifier = activity.get("id")
-            if identifier in old_choices and old_contexts.get(identifier) == new_contexts.get(identifier) and activity.get("incomingRoute") != old_choices[identifier]:
-                raise error_type(422, "route_selection_protected", "当前接驳的用户选用方案需通过比较并选择来更换，修改时间或备注时请保留原方案。")
-    selected_sources = [(activity["incomingRoute"], route_contexts(days).get(activity["id"]))
-                        for days in (previous.get("days"), previous.get("draft"), (previous.get("previousTrip") or {}).get("days"))
-                        for activity in _activities(days) if (activity.get("incomingRoute") or {}).get("selection") == "user"]
-    for days in (proposed.get("days"), proposed.get("draft")):
-        contexts = route_contexts(days)
-        for activity in _activities(days):
+            context = new_contexts.get(identifier)
+            same_leg = context is not None and context == old_contexts.get(identifier)
+            old_route = old_routes.get(identifier, {})
             route = activity.get("incomingRoute") or {}
-            if route.get("selection") == "user" and (route, contexts.get(activity["id"])) not in selected_sources:
-                raise error_type(422, "route_unverified", "用户选用方案与当前日期、相邻活动或地点不符，请重新比较并选择。")
-        for activities in _day_activities(days):
-            origin = None
-            for target in activities:
-                route = target.get("incomingRoute")
-                if route and route["status"] == "verified":
-                    source, destination = (origin or {}).get("place"), target.get("place")
-                    if not source or not destination or not any(route == known_route and source == old_source and destination == old_destination
-                                                               for known_route, old_source, old_destination in route_sources):
-                        raise error_type(422, "route_unverified", "地点位置或顺序已变化，请重新查询交通。")
-                origin = target
+            if same_leg and old_route.get("selection") == "user" and route != old_route:
+                raise error_type(422, "route_selection_protected", "当前接驳的用户选用方案需通过比较并选择来更换，修改时间或备注时请保留原方案。")
+            if route and not same_leg:
+                raise error_type(422, "route_unverified", "日期、相邻活动或地点已变化，请重新查询当前接驳。")
+            if route.get("status") == "verified":
+                origin, target = context[-2:]
+                if route != old_route or not route_matches(route, origin or {}, target or {}):
+                    raise error_type(422, "route_unverified", "当前接驳与已核验的路线不符，请重新查询。")
+            if activity.get("incomingTransportOverride") and route and route["mode"] != leg_transport_mode(activity, None):
+                raise error_type(422, "route_unverified", "路线与本段指定的交通方式不符。")
 
 
 def clear_changed_routes(days, previous_days=None):
@@ -242,7 +273,7 @@ def trip_router(agents, store, error_type):
         meta = data.get("draftTrip") or data.get("trip")
         if not data.get("trip") or not meta:
             raise error_type(409, "draft_missing", "请先生成真实正式行程，再使用候选池。")
-        days = deepcopy(data["draft"] if data.get("draft") is not None else data.get("days", []))
+        days = deepcopy(_active_days(data))
         pool = deepcopy(active_candidates(data))
         try:
             validate_candidate_snapshot(days, pool)
@@ -258,15 +289,15 @@ def trip_router(agents, store, error_type):
             raise error_type(422, "candidate_destination", "该候选属于其他目的地，不能排入当前行程；候选仍保留。")
         return candidate
 
-    def save_candidate_draft(identifier, revision, days, pool, meta, selected_day, check_days=False):
+    def save_candidate_draft(identifier, revision, days, pool, meta, selected_day, validate_days=None):
         try:
             validate_candidate_snapshot(days, pool)
-            if check_days:
+            if validate_days is not None:
                 current = store.get(identifier).data
                 clear_changed_routes(days, current["draft"] if current.get("draft") is not None else current.get("days"))
                 if not _activities(days):
                     raise error_type(422, "trip_empty", "正式行程至少需要保留一个活动，不能移出最后一个活动。")
-                validate_result({"days": days, "trip": meta})
+                validate_days({"days": days, "trip": meta})
         except TripTimingError as error:
             raise error_type(422, "trip_transfer_conflict", str(error)) from None
         except (ValueError, TypeError):
@@ -326,11 +357,11 @@ def trip_router(agents, store, error_type):
             if group["expires_at"] <= monotonic() or group["tools"] is not agents.tools:
                 route_options.pop(key, None)
 
-    def transit_leg(document, activity_id):
+    def editable_leg(document, activity_id, *, transit_only=False):
         meta, days, pool = candidate_context(document)
-        if meta.get("transportMode") != "transit":
-            raise error_type(409, "route_mode", "请先将整程交通方式设为公共交通，再比较方案。")
         day, index, target = find_activity(days, activity_id)
+        if transit_only and leg_transport_mode(target, meta.get("transportMode")) != "transit":
+            raise error_type(409, "route_mode", "请先将这段接驳设为公共交通，再比较方案。")
         if index == 0:
             raise error_type(422, "route_origin_missing", "当天第一个活动没有前序接驳，请选择其他活动。")
         origin = day["activities"][index - 1]
@@ -338,14 +369,14 @@ def trip_router(agents, store, error_type):
             Place.model_validate(origin.get("place"))
             Place.model_validate(target.get("place"))
         except (ValueError, TypeError):
-            raise error_type(422, "place_unverified", "请先重新定位这段接驳的两个地点，再比较公交方案。") from None
+            raise error_type(422, "place_unverified", "请先重新定位这段接驳的两个地点。") from None
         return meta, days, pool, day, origin, target
 
     @router.post("/{identifier}/trip/routes/options")
     async def compare_routes(identifier: UUID, payload: TripActivityChange):
         async with agents.configuration_lock:
             document = editable(identifier, payload.expected_revision)
-            meta, days, _, _, origin, target = transit_leg(document, payload.activity_id)
+            meta, days, _, _, origin, target = editable_leg(document, payload.activity_id, transit_only=True)
             expire_route_options()
             route_options.pop(identifier, None)
             tools = agents.tools
@@ -368,7 +399,7 @@ def trip_router(agents, store, error_type):
             group = route_options.get(identifier)
             if not group or group["revision"] != document.revision or payload.option_id not in group["options"]:
                 raise error_type(409, "route_option_expired", "比较结果已失效，请重新比较公交方案；原草稿仍保留。")
-            meta, days, pool, day, _, target = transit_leg(document, group["activity_id"])
+            meta, days, pool, day, _, target = editable_leg(document, group["activity_id"], transit_only=True)
             route = group["options"][payload.option_id]
             if route_contexts(days)[target["id"]] != group["context"] or not route_fresh(route):
                 raise error_type(409, "route_option_expired", "日期、相邻地点或路线资料已变化，请重新比较；原草稿仍保留。")
@@ -377,6 +408,25 @@ def trip_router(agents, store, error_type):
             saved = save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"])
             route_options.pop(identifier, None)
             return saved
+
+    @router.post("/{identifier}/trip/routes/transport")
+    async def change_leg_transport(identifier: UUID, payload: LegTransport):
+        async with agents.configuration_lock:
+            document = editable(identifier, payload.expected_revision)
+            meta, days, pool, day, origin, target = editable_leg(document, payload.activity_id)
+            override = None if payload.mode is None else {
+                "day": day["day"], "fromActivityId": origin["id"], "mode": payload.mode,
+            }
+            if target.get("incomingTransportOverride") == override:
+                return document
+            default = meta.get("transportMode") or "walking"
+            if leg_transport_mode(target, default) != (payload.mode or default):
+                target.pop("incomingRoute", None)
+            if override is None:
+                target.pop("incomingTransportOverride", None)
+            else:
+                target["incomingTransportOverride"] = override
+            return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"])
 
     @router.post("/{identifier}/trip/transport")
     async def change_transport(identifier: UUID, payload: TripTransport):
@@ -388,10 +438,11 @@ def trip_router(agents, store, error_type):
             meta = {**meta, "transportMode": payload.mode}
             for activity in _activities(days):
                 route = activity.get("incomingRoute")
-                if route is not None and route.get("mode") != payload.mode:
+                if route is not None and route.get("mode") != leg_transport_mode(activity, payload.mode):
                     activity.pop("incomingRoute")
+            clear_changed_routes(days)
             return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta,
-                                        document.data.get("selectedDay", 1), check_days=True)
+                                        document.data.get("selectedDay", 1), validate_days=TripResult.model_validate)
 
     @router.post("/{identifier}/trip/candidates/park")
     async def park_candidate(identifier: UUID, payload: TripActivityChange):
@@ -406,7 +457,7 @@ def trip_router(agents, store, error_type):
             except (ValueError, TypeError):
                 raise error_type(422, "place_unverified", "请先确认该活动的真实地点及完整信息，再移入候选。") from None
             day["activities"].pop(index)
-            return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], True)
+            return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], validate_days=validate_result)
 
     @router.post("/{identifier}/trip/candidates/from-place")
     async def candidate_from_place(identifier: UUID, payload: CandidateFromPlace):
@@ -497,7 +548,7 @@ def trip_router(agents, store, error_type):
                 day["activities"][option["position"]]["incomingRoute"] = deepcopy(option["outgoing"])
             day["activities"].insert(option["position"], activity)
             pool.remove(candidate)
-            saved = save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], True)
+            saved = save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], validate_days=validate_result)
             slot_options.pop(payload.option_id, None)
             return saved
 
