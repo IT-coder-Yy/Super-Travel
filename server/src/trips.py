@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 import math
 import re
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -16,6 +16,8 @@ from supertravel_server.trip_routes import MODES, RouteSelectionExpired, TripLeg
 
 
 TransportMode = Literal["walking", "driving", "transit"]
+StopCount = Annotated[int, Field(ge=1, le=8)]
+DailyStopCounts = Annotated[list[StopCount | None], Field(min_length=1, max_length=7)]
 
 
 class StrictModel(BaseModel):
@@ -25,9 +27,15 @@ class StrictModel(BaseModel):
 class TripRequest(StrictModel):
     destination: str = Field(min_length=1, max_length=60)
     days: int = Field(ge=1, le=7)
-    stops_per_day: int | None = Field(default=None, ge=1, le=8, description="用户指定每天的地点数；单日行程指定3个地点时必须为3。未指定为null。")
+    stops_per_day: StopCount | DailyStopCounts | None = Field(default=None, description="统一数量填整数；按天指定时按日期顺序填数组，长度等于 days，例如 [3,1]。没有数量要求的天填 null；全程未指定填 null。")
     map_provider: Literal["baidu", "amap"] | None = Field(default=None, description="用户明确只使用百度或高德时分别填baidu或amap，未限定为null。限定时本次仅查询该地图地点。")
     transport_mode: TransportMode = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
+
+    @model_validator(mode="after")
+    def check_daily_counts(self):
+        if isinstance(self.stops_per_day, list) and len(self.stops_per_day) != self.days:
+            raise ValueError("逐日地点数量必须与行程天数一致。")
+        return self
 
 
 class SourceLocation(StrictModel):
@@ -505,8 +513,11 @@ class TripResearch:
         for day in planned.days:
             if not self.editing and not day.activities:
                 raise ValueError("首次生成行程时每天至少需要安排一个活动。")
-            if request.stops_per_day is not None and len(day.activities) != request.stops_per_day:
-                raise ValueError(f"每天必须恰好安排 {request.stops_per_day} 个不同地点，请按用户要求调整。")
+            counts = request.stops_per_day
+            required = counts[day.day - 1] if isinstance(counts, list) else counts
+            if required is not None and len(day.activities) != required:
+                scope = f"第 {day.day} 天" if isinstance(counts, list) else "每天"
+                raise ValueError(f"{scope}必须恰好安排 {required} 个不同地点，请按用户要求调整。")
             end, used, activities = 0, set(), []
             for stop in day.activities:
                 candidate = self.candidates.get(stop.activity_id) if stop.activity_id else None
