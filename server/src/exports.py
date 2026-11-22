@@ -10,7 +10,7 @@ from fastapi import APIRouter
 from pydantic import ValidationError
 
 from supertravel_server.trip_api import TripRevision
-from supertravel_server.trip_routes import route_fresh, route_matches
+from supertravel_server.trip_routes import leg_transport_mode, route_fresh, route_matches
 from supertravel_server.trips import ActivityCost, IncomingRoute, TripResult, trip_overview
 
 
@@ -47,7 +47,7 @@ def _money(amount_fen):
 
 def _transit(details, selected=False):
     if details is None:
-        return "公交详情未查询。"
+        return ("用户选用方案。" if selected else "") + "公交详情未查询。"
     transfers, fare = details.get("transferCount"), details.get("fare")
     lines = [f"换乘 {transfers} 次（按乘车段计算）" if transfers is not None else "换乘次数待确认"]
     lines.append("参考总票价：" + _money(fare["amountFen"]) + "（仅供参考，以实际结果为准）" if fare else "参考总票价未知")
@@ -91,7 +91,8 @@ def _route(previous, activity, mode):
     if route["status"] != "verified":
         return f"{MODES[route['mode']]}耗时未知 / 待确认。{_plain(route.get('reason') or '尚无可用路线估算。')} {evidence}"
     if not route_fresh(route):
-        return f"未知 / 待确认；路线记录已过期或查询时间无效，不能作为当前已核验接驳。{evidence}"
+        choice = "用户选用的公交方案请重新比较并选择。" if route.get("selection") == "user" else ""
+        return f"未知 / 待确认；路线记录已过期或查询时间无效。{choice}{evidence}"
     return (f"已查询估算：{MODES[route['mode']]}约 {route['durationMinutes']} 分钟，"
             f"{route['distanceMeters']} 米。{evidence}"
             + ("\n" + _transit(route.get("transit"), route.get("selection") == "user") if route["mode"] == "transit" else "")
@@ -99,7 +100,9 @@ def _route(previous, activity, mode):
 
 
 def export_blocks(days, trip, revision):
+    default_mode = trip.get("transportMode") or "walking"
     blocks = [("title", f"{_plain(trip['destination'])}行程"), ("body", "已保存正式版"),
+              ("item", f"整程默认交通方式：{MODES[default_mode]}"),
               ("item", f"快照会话版本：{revision}"),
               ("item", f"行程生成时间：{_plain(trip['generatedAt'])}"),
               ("item", f"导出生成时间：{datetime.now(timezone.utc).isoformat()}"),
@@ -118,12 +121,17 @@ def export_blocks(days, trip, revision):
             else:
                 total += cost["amountFen"]
                 cost_text = _money(cost["amountFen"]) + ("（免费，用户填写）" if cost["amountFen"] == 0 else "（用户填写）")
+            mode = leg_transport_mode(activity, default_mode)
+            connection = _route(previous, activity, mode)
+            if previous:
+                source = f"本段指定{MODES[mode]}" if activity.get("incomingTransportOverride") else f"跟随整程（{MODES[mode]}）"
+                connection = f"{source}。{connection}"
             blocks += [("activity", f"{index}. {_plain(activity['time'])} · {_plain(activity['title'])}"),
                        ("item", f"地址：{_plain(activity['place']['address']) or '未知 / 待确认'}"),
                        ("item", f"停留时长：{_plain(activity['duration'])}"),
                        ("item", f"备注：{_plain(activity['description'], multiline=True)}"),
                        ("item", f"费用（人民币）：{cost_text}"),
-                       ("item", f"接驳：{_route(previous, activity, trip.get('transportMode') or 'walking')}")]
+                       ("item", f"接驳：{connection}")]
             previous = activity
     blocks += [("heading", "费用汇总"), ("item", f"已知费用小计（人民币，用户填写）：{_money(total)}"),
                ("item", f"费用未知项：{unknown} 项"),
