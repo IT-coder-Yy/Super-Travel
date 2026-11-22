@@ -3,7 +3,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { ActivityDeletePreview, ActivityMove, CandidatePlaceSelection, CandidateSlots, Conversation, ConversationSummary, PlaceCategory, PlaceSearchResult, PlaceSelection, RecoveryOption, TravelPreferences, TravelPreferencesResponse, TripExportFormat, TripExportSnapshot, TripRoute, TripRouteOptions, WorkspaceData } from './types'
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
+  constructor(message: string, readonly status: number, readonly code?: string, readonly activityId?: string) { super(message) }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -17,7 +17,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = await response.json().catch(() => null)
     const detail = body?.detail
     throw new ApiError(detail?.message || (typeof detail === 'string' ? detail : `本地服务请求失败（${response.status}）`),
-      response.status, typeof detail?.code === 'string' ? detail.code : undefined)
+      response.status, typeof detail?.code === 'string' ? detail.code : undefined,
+      typeof detail?.activity_id === 'string' ? detail.activity_id : undefined)
   }
   return response.json() as Promise<T>
 }
@@ -31,6 +32,8 @@ export const cancelAgent = (id: string) => request<Conversation>(`/conversations
 export const applyTripDraft = (current: ConversationSummary) => request<Conversation>(`/conversations/${encodeURIComponent(current.id)}/trip/apply`, { method: 'POST', signal: AbortSignal.timeout(45_000), body: JSON.stringify({ expected_revision: current.revision }) })
 export const setTripTransport = (current: ConversationSummary, mode: TripRoute['mode']) => request<Conversation>(
   '/conversations/' + encodeURIComponent(current.id) + '/trip/transport', { method: 'POST', body: JSON.stringify({ expected_revision: current.revision, mode }) })
+export const setTripLegTransport = (current: ConversationSummary, activityId: string, mode: TripRoute['mode'] | null) => request<Conversation>(
+  '/conversations/' + encodeURIComponent(current.id) + '/trip/routes/transport', { method: 'POST', body: JSON.stringify({ expected_revision: current.revision, activity_id: activityId, mode }) })
 export const compareTripRoutes = (current: ConversationSummary, activityId: string, signal: AbortSignal) => request<TripRouteOptions>(
   '/conversations/' + encodeURIComponent(current.id) + '/trip/routes/options', { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]), body: JSON.stringify({ expected_revision: current.revision, activity_id: activityId }) })
 export const selectTripRoute = (current: ConversationSummary, optionId: string) => request<Conversation>(
