@@ -25,6 +25,35 @@ TOOLS = [
 ]
 
 
+def search_result_rows(rows, *, url_key: str, xhs: bool, count: int) -> list[dict[str, str]]:
+    """Validate public result URLs before they enter a tool reply or a conversation."""
+    if not isinstance(rows, list):
+        return []
+    results, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get(url_key), str):
+            continue
+        url = row[url_key]
+        try:
+            parsed = urlsplit(url)
+            host = (parsed.hostname or "").lower()
+            if parsed.scheme != "https" or not host or parsed.username or parsed.password or "\\" in url or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
+                continue
+            parsed.port  # Reject malformed URL ports without making a request to the result.
+            if xhs and not (host == "xiaohongshu.com" or host.endswith(".xiaohongshu.com")):
+                continue
+        except ValueError:
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        results.append({"title": row.get("title", "")[:500] if isinstance(row.get("title"), str) else "",
+                        "url": url, "snippet": row.get("snippet", "")[:2000] if isinstance(row.get("snippet"), str) else ""})
+        if len(results) == count:
+            break
+    return results
+
+
 def _failure(status: int, data) -> ToolError:
     # Classify the provider response without exposing its request/header echoes.
     message = " ".join(str(data.get(key, "")) for key in ("message", "error")).lower() if isinstance(data, dict) else ""
@@ -100,28 +129,7 @@ class SearchTools:
         status = data.get("statusCode")
         if data.get("error") or data.get("message") and "organic" not in data or type(status) is int and status >= 400:
             raise _failure(status if type(status) is int and status >= 400 else 200, data)
-        results, seen = [], set()
-        for row in data.get("organic", []):
-            if not isinstance(row, dict) or not isinstance(row.get("link"), str):
-                continue
-            url = row["link"]
-            try:
-                parsed = urlsplit(url)
-                host = (parsed.hostname or "").lower()
-                if parsed.scheme != "https" or not host or parsed.username or parsed.password or "\\" in url or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in url):
-                    continue
-                parsed.port  # Reject malformed URL ports without making a request to the result.
-                if xhs and not (host == "xiaohongshu.com" or host.endswith(".xiaohongshu.com")):
-                    continue
-            except ValueError:
-                continue
-            if url in seen:
-                continue
-            seen.add(url)
-            results.append({"title": row.get("title", "")[:500] if isinstance(row.get("title"), str) else "",
-                            "url": url, "snippet": row.get("snippet", "")[:2000] if isinstance(row.get("snippet"), str) else ""})
-            if len(results) == count:
-                break
+        results = search_result_rows(data.get("organic", []), url_key="link", xhs=xhs, count=count)
         payload = self._redact({"provider": "serper", "source": "xiaohongshu_public_index" if xhs else "web_search",
             "query": query, "status": "ok" if results else "empty", "results": results,
             "notice": ("仅为 Serper 收录的小红书公开链接与搜索摘要，未读取登录内容或完整笔记。" if xhs else "搜索摘要不等同于已读取网页全文。") +
