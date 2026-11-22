@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from referencing import Registry
 
 from supertravel_server.model import ModelClient, ModelError
+from supertravel_server.trip_routes import RouteSelectionExpired, check_selected_routes_fresh
 from supertravel_server.trips import ROUTE_TOOL as TRIP_ROUTE_TOOL, SEARCH_TOOL, SUBMIT_TOOL, TripRequest, TripResearch, trip_overview
 
 
@@ -432,6 +433,8 @@ class AgentSession:
                     changes = {"trip_result": trip_result, "candidate_snapshot": candidate_snapshot,
                                "submitted_candidate_ids": list(research.submitted_candidate_ids)} if trip_result else {}
                     content = await self._summarize(run_id, request, results, trip_result, is_draft=bool(metadata), travel_preferences=travel_preferences, history=history, preference_application=preference_application)
+                    if trip_result:
+                        check_selected_routes_fresh(trip_result["days"], trip.transport_mode)
                     await self._publish(run_id, status="completed", content=content, error=None, **changes)
                     return
                 except StepFailure as error:
@@ -460,6 +463,8 @@ class AgentSession:
                     await self._publish(run_id, plan=steps, error=None)
         except asyncio.CancelledError:
             raise
+        except RouteSelectionExpired as error:
+            await self._publish(run_id, status="needs_input", content=str(error), error=None)
         except Exception as error:
             message = str(error) if isinstance(error, (StepFailure, ModelError)) else "任务执行失败，请重试或检查工具服务。"
             try:
@@ -523,6 +528,8 @@ class AgentSession:
                         raise StepFailure("提交行程时不要同时调用其他工具。")
                     try:
                         submitted = research.submit(arguments, trip)
+                    except RouteSelectionExpired:
+                        raise
                     except ValueError as error:
                         raise StepFailure(str(error)) from None
                     self._check(run_id)
@@ -553,7 +560,7 @@ class AgentSession:
                     result = await self.tools.call_tool(name, arguments)
                 self._check(run_id)
                 return result
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, RouteSelectionExpired):
                 raise
             except Exception as error:
                 self._check(run_id)

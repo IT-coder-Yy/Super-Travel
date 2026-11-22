@@ -14,7 +14,7 @@ from supertravel_server.candidates import (Candidate, active_candidates, as_cand
 from supertravel_server.mcp_client import ToolError
 from supertravel_server.trips import (ActivityCost, IncomingRoute, IncomingTransportOverride, Place, TransportMode,
                                       TripResearch, TripResult, TripTimingError, validate_result)
-from supertravel_server.trip_routes import (RouteSelectionExpired, leg_transport_mode, query_transit_options, route_contexts,
+from supertravel_server.trip_routes import (RouteSelectionExpired, check_selected_routes_fresh, leg_transport_mode, query_route, query_transit_options, route_contexts,
                                            route_fresh, route_matches, unknown_route)
 
 
@@ -213,21 +213,17 @@ def clear_changed_routes(days, previous_days=None):
 
 async def refresh_routes(tools, days, destination, transport_mode="walking"):
     clear_changed_routes(days)
-    for day in days:
-        for activity in day["activities"]:
-            route = activity.get("incomingRoute") or {}
-            if route.get("selection") == "user" and route.get("mode") == transport_mode and not route_fresh(route):
-                raise RouteSelectionExpired(f"第 {day['day']} 天前往{activity['title']}的用户选用公交方案已过期，请重新比较并选择；原草稿仍保留。")
-    research = TripResearch(tools, destination, days)
+    check_selected_routes_fresh(days, transport_mode)
     exhausted = False
     attempts = 0
     deadline = asyncio.get_running_loop().time() + 30
     for day in days:
         for previous, activity in zip(day["activities"], day["activities"][1:]):
             route = activity.get("incomingRoute")
-            if route and route.get("status") == "verified" and route_matches(route, previous["place"], activity["place"], transport_mode) and route_fresh(route):
-                continue
-            mode = transport_mode
+            mode = leg_transport_mode(activity, transport_mode)
+            if route and route.get("status") == "verified" and route_matches(route, previous["place"], activity["place"], mode):
+                if route.get("selection") == "user" or route_fresh(route):
+                    continue
             origin, target = previous["place"], activity["place"]
             if exhausted or asyncio.get_running_loop().time() >= deadline:
                 activity["incomingRoute"] = unknown_route(origin, target, mode, "本次路线核查超时，剩余交通耗时未知。")
@@ -237,14 +233,15 @@ async def refresh_routes(tools, days, destination, transport_mode="walking"):
                 continue
             # Count every business attempt, including failures and unsupported place pairs.
             attempts += 1
-            # Unknown results can be retried explicitly when applying the draft again.
-            research.routes.pop((origin["id"], target["id"], mode), None)
             try:
                 async with asyncio.timeout_at(deadline):
-                    activity["incomingRoute"] = await research.route(origin["id"], target["id"], mode)
+                    # The same POI can have different saved coordinates on another day.
+                    activity["incomingRoute"] = await query_route(tools, origin, target, mode, destination)
             except TimeoutError:
                 exhausted = True
                 activity["incomingRoute"] = unknown_route(origin, target, mode, "本次路线核查超时，交通耗时未知。")
+    # An earlier choice may have expired while another leg was being queried.
+    check_selected_routes_fresh(days, transport_mode)
 
 
 def trip_router(agents, store, error_type):
@@ -731,7 +728,7 @@ def trip_router(agents, store, error_type):
                 raise error_type(409, "draft_missing", "没有可应用的真实行程草稿。")
             from supertravel_server.trips import validate_result
             try:
-                days = deepcopy(data["draft"] if data.get("draft") is not None else data["days"])
+                days = deepcopy(_active_days(data))
                 pool = deepcopy(active_candidates(data))
                 validate_candidate_snapshot(days, pool)
                 clear_changed_routes(days)
@@ -740,9 +737,9 @@ def trip_router(agents, store, error_type):
                 await refresh_routes(agents.tools, days, meta["destination"], meta.get("transportMode") or "walking")
                 result = validate_result({"days": days, "trip": meta})
             except RouteSelectionExpired as error:
-                raise error_type(409, "route_selection_expired", str(error)) from None
+                raise error_type(409, "route_selection_expired", str(error), activity_id=error.activity_id) from None
             except TripTimingError as error:
-                raise error_type(422, "trip_transfer_conflict", str(error)) from None
+                raise error_type(422, "trip_transfer_conflict", str(error), activity_id=error.activity_id) from None
             except (ValueError, TypeError):
                 raise error_type(422, "trip_invalid", "草稿尚未完整：请确认每个地点的位置、有效时间和每日安排后再应用。") from None
             return store.mutate(identifier, lambda current: replace_formal(current, result, pool), expected_revision=payload.expected_revision)

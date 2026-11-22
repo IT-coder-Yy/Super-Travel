@@ -12,7 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from supertravel_server.mcp_client import ToolError
-from supertravel_server.trip_routes import MODES, RouteSelectionExpired, query_route, route_contexts, route_fresh, route_matches, unknown_route
+from supertravel_server.trip_routes import MODES, RouteSelectionExpired, TripLegError, leg_transport_mode, query_route, route_contexts, route_fresh, route_matches, unknown_route
 
 
 TransportMode = Literal["walking", "driving", "transit"]
@@ -219,7 +219,7 @@ def validate_result(value: dict) -> dict:
     return result
 
 
-class TripTimingError(ValueError):
+class TripTimingError(TripLegError):
     pass
 
 
@@ -230,14 +230,19 @@ def check_transfers(days, transport_mode=None):
             route = activity.get("incomingRoute")
             if route is not None:
                 if previous is None or not route_matches(route, previous["place"], activity["place"]):
-                    raise TripTimingError("地点顺序已改变，请重新查询相邻活动间的交通。")
-                if transport_mode and route["mode"] != transport_mode:
-                    raise TripTimingError("交通方式已改变，请重新查询相邻活动间的交通。")
-                if route["status"] == "verified" and route_fresh(route):
+                    raise TripTimingError("地点顺序已改变，请重新查询相邻活动间的交通。", activity["id"])
+                mode = leg_transport_mode(activity, transport_mode)
+                if route["mode"] != mode:
+                    # Legacy snapshots may lack a declared mode. Ignore other modes' travel times.
+                    if transport_mode or activity.get("incomingTransportOverride"):
+                        raise TripTimingError("交通方式已改变，请重新查询相邻活动间的交通。", activity["id"])
+                elif route["status"] == "verified" and route_fresh(route):
                     end = int(previous["time"][:2]) * 60 + int(previous["time"][3:]) + int(re.search(r"\d+", previous["duration"])[0])
                     start = int(activity["time"][:2]) * 60 + int(activity["time"][3:])
-                    if start - end < route["durationMinutes"]:
-                        raise TripTimingError(f"第 {day['day']} 天前往{activity['title']}的接驳至少需要 {route['durationMinutes']} 分钟，当前只预留 {start - end} 分钟，请调整时间。")
+                    gap, needed = start - end, route["durationMinutes"]
+                    if gap < needed:
+                        raise TripTimingError(f"第 {day['day']} 天前往{activity['title']}的接驳至少需要 {needed} 分钟，"
+                                             f"当前只预留 {gap} 分钟，还差 {needed - gap} 分钟，请调整时间。", activity["id"])
             previous = activity
 
 
@@ -478,7 +483,7 @@ class TripResearch:
                     context = (day.day, activities[-2]["id"], activities[-1]["id"], origin, place)
                     if choice and choice[0] == context and choice[1]["mode"] == request.transport_mode:
                         if not route_fresh(choice[1]):
-                            raise RouteSelectionExpired(f"第 {day.day} 天前往{place['name']}的用户选用公交方案已过期，请在编辑中重新比较并选择；原草稿仍保留。")
+                            raise RouteSelectionExpired(f"第 {day.day} 天前往{place['name']}的用户选用公交方案已过期，请在编辑中重新比较并选择；原草稿仍保留。", activities[-1]["id"])
                         route = choice[1]
                     activities[-1]["incomingRoute"] = deepcopy(route) if route and route_fresh(route) else unknown_route(origin, place, request.transport_mode)
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})

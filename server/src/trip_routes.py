@@ -49,8 +49,22 @@ def _payloads(result):
                 continue
 
 
-class RouteSelectionExpired(ValueError):
+class TripLegError(ValueError):
+    def __init__(self, message: str, activity_id: str):
+        super().__init__(message)
+        self.activity_id = activity_id
+
+
+class RouteSelectionExpired(TripLegError):
     pass
+
+
+def check_selected_routes_fresh(days, default_mode):
+    for day in days:
+        for activity in day["activities"]:
+            route = activity.get("incomingRoute") or {}
+            if route.get("selection") == "user" and route["mode"] == leg_transport_mode(activity, default_mode) and not route_fresh(route):
+                raise RouteSelectionExpired(f"第 {day['day']} 天前往{activity['title']}的用户选用公交方案已过期，请重新比较并选择；原草稿仍保留。", activity["id"])
 
 
 def route_cache_key(origin, destination, mode):
