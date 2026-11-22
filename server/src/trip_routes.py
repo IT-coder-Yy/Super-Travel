@@ -30,6 +30,11 @@ def unknown_route(origin, destination, mode="walking", reason="尚未查询交�
             "status": "unknown", "reason": reason}
 
 
+def leg_transport_mode(activity, default_mode):
+    override = activity.get("incomingTransportOverride")
+    return override["mode"] if override else (default_mode or "walking")
+
+
 def route_matches(route, origin, destination, mode=None):
     return isinstance(route, dict) and route.get("fromPlaceId") == origin.get("id") and route.get("toPlaceId") == destination.get("id") and (mode is None or route.get("mode") == mode)
 

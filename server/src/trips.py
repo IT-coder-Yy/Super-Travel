@@ -15,6 +15,9 @@ from supertravel_server.mcp_client import ToolError
 from supertravel_server.trip_routes import MODES, RouteSelectionExpired, query_route, route_contexts, route_fresh, route_matches, unknown_route
 
 
+TransportMode = Literal["walking", "driving", "transit"]
+
+
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True, allow_inf_nan=False)
 
@@ -24,7 +27,7 @@ class TripRequest(StrictModel):
     days: int = Field(ge=1, le=7)
     stops_per_day: int | None = Field(default=None, ge=1, le=8, description="用户指定每天的地点数；单日行程指定3个地点时必须为3。未指定为null。")
     map_provider: Literal["baidu", "amap"] | None = Field(default=None, description="用户明确只使用百度或高德时分别填baidu或amap，未限定为null。限定时本次仅查询该地图地点。")
-    transport_mode: Literal["walking", "driving", "transit"] = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
+    transport_mode: TransportMode = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
 
 
 class SourceLocation(StrictModel):
@@ -66,7 +69,7 @@ class TaxiEstimate(TransitFare):
 class IncomingRoute(StrictModel):
     fromPlaceId: str = Field(min_length=1, max_length=200)
     toPlaceId: str = Field(min_length=1, max_length=200)
-    mode: Literal["walking", "driving", "transit"]
+    mode: TransportMode
     status: Literal["verified", "unknown"]
     durationMinutes: int | None = Field(default=None, ge=1, le=2880)
     distanceMeters: int | None = Field(default=None, ge=0, le=3000000)
@@ -139,13 +142,19 @@ class TripMeta(StrictModel):
     destination: str = Field(min_length=1, max_length=60)
     summary: str = Field(min_length=1, max_length=800)
     generatedAt: str = Field(min_length=1, max_length=50)
-    transportMode: Literal["walking", "driving", "transit"] | None = None
+    transportMode: TransportMode | None = None
 
     @model_validator(mode="after")
     def timestamp(self):
         if datetime.fromisoformat(self.generatedAt).tzinfo is None:
             raise ValueError("trip timestamp needs a timezone")
         return self
+
+
+class IncomingTransportOverride(StrictModel):
+    day: int = Field(ge=1, le=7)
+    fromActivityId: str = Field(min_length=1, max_length=200)
+    mode: TransportMode
 
 
 class TripActivity(StrictModel):
@@ -158,6 +167,7 @@ class TripActivity(StrictModel):
     y: float = 0
     place: Place
     incomingRoute: IncomingRoute | None = None
+    incomingTransportOverride: IncomingTransportOverride | None = None
     cost: ActivityCost | None = None
 
 
@@ -179,7 +189,10 @@ class TripResult(StrictModel):
         identifiers = set()
         for day in self.days:
             end, places = 0, set()
-            for activity in day.activities:
+            for index, activity in enumerate(day.activities):
+                override = activity.incomingTransportOverride
+                if override and (override.day != day.day or index == 0 or override.fromActivityId != day.activities[index - 1].id):
+                    raise ValueError("单段方式与当前行程日或前序活动不符。")
                 duration = int(re.search(r"\d+", activity.duration)[0])
                 start = int(activity.time[:2]) * 60 + int(activity.time[3:])
                 if not 15 <= duration <= 720 or start < end or start + duration > 1440:
