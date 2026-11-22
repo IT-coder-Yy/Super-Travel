@@ -202,13 +202,15 @@ def clear_changed_routes(days, previous_days=None):
     before = route_contexts(previous_days) if previous_days is not None else None
     after = route_contexts(days)
     for activities in _day_activities(days):
-        previous = None
-        for activity in activities:
-            if activity.get("incomingRoute") is not None and (not previous or not activity.get("place") or not previous.get("place")
-                    or not route_matches(activity["incomingRoute"], previous["place"], activity["place"])
-                    or activity["incomingRoute"].get("selection") == "user" and before is not None and before.get(activity["id"]) != after.get(activity["id"])):
+        for index, activity in enumerate(activities):
+            origin = activities[index - 1].get("place") if index else None
+            destination = activity.get("place")
+            identifier = activity.get("id")
+            if not origin or not destination or (before is not None and before.get(identifier) != after.get(identifier)):
+                activity.pop("incomingTransportOverride", None)
                 activity.pop("incomingRoute", None)
-            previous = activity
+            elif activity.get("incomingRoute") is not None and not route_matches(activity["incomingRoute"], origin, destination):
+                activity.pop("incomingRoute", None)
 
 
 async def refresh_routes(tools, days, destination, transport_mode="walking"):
@@ -290,8 +292,6 @@ def trip_router(agents, store, error_type):
         try:
             validate_candidate_snapshot(days, pool)
             if validate_days is not None:
-                current = store.get(identifier).data
-                clear_changed_routes(days, current["draft"] if current.get("draft") is not None else current.get("days"))
                 if not _activities(days):
                     raise error_type(422, "trip_empty", "正式行程至少需要保留一个活动，不能移出最后一个活动。")
                 validate_days({"days": days, "trip": meta})
@@ -323,9 +323,8 @@ def trip_router(agents, store, error_type):
                     return day, index, activity
         raise error_type(422, "activity_missing", "活动已不在当前草稿中，请重新选择。")
 
-    def save_edited_draft(identifier, revision, days, meta, selected_day):
-        current = store.get(identifier).data
-        clear_changed_routes(days, current["draft"] if current.get("draft") is not None else current.get("days"))
+    def save_edited_draft(document, days, meta, selected_day):
+        clear_changed_routes(days, _active_days(document.data))
         if not _activities(days):
             raise error_type(422, "trip_empty", "正式行程至少需要保留一个活动，不能删除最后一个活动。")
         try:
@@ -334,7 +333,7 @@ def trip_router(agents, store, error_type):
             raise error_type(422, "trip_transfer_conflict", str(error)) from None
         except (ValueError, TypeError):
             raise error_type(422, "trip_invalid", "活动位置与时间不一致，或存在重叠、跨午夜及不完整活动；请调整后重试，原草稿已保留。") from None
-        return store.mutate(identifier, lambda current: current.update(draft=days, draftTrip=meta, selectedDay=selected_day), expected_revision=revision)
+        return store.mutate(document.id, lambda current: current.update(draft=days, draftTrip=meta, selectedDay=selected_day), expected_revision=document.revision)
 
     def replace_formal(current, result, pool, restore_favorites=()):
         old_ids = {activity["id"] for activity in _activities(current["days"]) + current.get("candidates", [])}
@@ -454,6 +453,7 @@ def trip_router(agents, store, error_type):
             except (ValueError, TypeError):
                 raise error_type(422, "place_unverified", "请先确认该活动的真实地点及完整信息，再移入候选。") from None
             day["activities"].pop(index)
+            clear_changed_routes(days, _active_days(document.data))
             return save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], validate_days=validate_result)
 
     @router.post("/{identifier}/trip/candidates/from-place")
@@ -539,11 +539,14 @@ def trip_router(agents, store, error_type):
                 raise error_type(409, "candidate_option_expired", "目标日程已变化，请重新检查空档；候选仍保留。")
             activity = {key: deepcopy(value) for key, value in candidate.items() if key != "destination"}
             activity.update(time=payload.time, duration=f"约 {option['duration']} 分钟", x=0, y=0)
+            position = option["position"]
+            day["activities"].insert(position, activity)
+            # Break the old leg before attaching the two routes verified by this slot.
+            clear_changed_routes(days, _active_days(document.data))
             if option["incoming"]:
                 activity["incomingRoute"] = deepcopy(option["incoming"])
             if option["outgoing"]:
-                day["activities"][option["position"]]["incomingRoute"] = deepcopy(option["outgoing"])
-            day["activities"].insert(option["position"], activity)
+                day["activities"][position + 1]["incomingRoute"] = deepcopy(option["outgoing"])
             pool.remove(candidate)
             saved = save_candidate_draft(identifier, payload.expected_revision, days, pool, meta, day["day"], validate_days=validate_result)
             slot_options.pop(payload.option_id, None)
@@ -575,11 +578,9 @@ def trip_router(agents, store, error_type):
             place_id = (activity.get("place") or {}).get("id")
             if place_id and any((item.get("place") or {}).get("id") == place_id for item in target["activities"]):
                 raise error_type(422, "place_duplicate", "目标日期已安排这个地点，请选择其他日期。")
-            if source is not target:
-                activity.pop("incomingRoute", None)
             activity["time"] = payload.time
             target["activities"].insert(payload.target_index, activity)
-            return save_edited_draft(identifier, payload.expected_revision, draft, meta, payload.target_day)
+            return save_edited_draft(document, draft, meta, payload.target_day)
 
     @router.post("/{identifier}/trip/activities/delete-preview")
     async def preview_delete_activity(identifier: UUID, payload: TripActivityChange):
@@ -593,7 +594,7 @@ def trip_router(agents, store, error_type):
                     "has_note": bool(activity.get("description", "").strip()), "is_favorite": activity["id"] in document.data.get("favorites", []),
                     "has_map_point": place.get("coordinateSystem") == "wgs84" and isinstance(place.get("latitude"), (float, int))
                                      and isinstance(place.get("longitude"), (float, int)) and -85 <= place["latitude"] <= 85 and -180 <= place["longitude"] <= 180,
-                    "affected_routes": sum(bool(item.get("incomingRoute")) for item in neighbors)}
+                    "affected_routes": sum(bool(item.get("incomingRoute") or item.get("incomingTransportOverride")) for item in neighbors)}
 
     @router.post("/{identifier}/trip/activities/delete")
     async def delete_activity(identifier: UUID, payload: TripActivityChange):
@@ -602,7 +603,7 @@ def trip_router(agents, store, error_type):
             meta, draft = draft_context(document)
             day, index, _ = find_activity(draft, payload.activity_id)
             day["activities"].pop(index)
-            return save_edited_draft(identifier, payload.expected_revision, draft, meta, document.data.get("selectedDay", 1))
+            return save_edited_draft(document, draft, meta, document.data.get("selectedDay", 1))
 
     def expire_selections():
         for key, selection in list(selections.items()):
@@ -669,14 +670,8 @@ def trip_router(agents, store, error_type):
                 activity["description"] = payload.description.strip()
             if not previous_place or previous_place["id"] != place["id"]:
                 activity.pop("cost", None)
-            if previous_place != place:
-                changed_ids = {place["id"]} | ({previous_place["id"]} if previous_place else set())
-                for item in _activities(draft):
-                    route = item.get("incomingRoute") or {}
-                    if changed_ids.intersection((route.get("fromPlaceId"), route.get("toPlaceId"))):
-                        item.pop("incomingRoute", None)
             day["activities"].sort(key=lambda item: item["time"])
-            clear_changed_routes(draft, document.data["draft"] if document.data.get("draft") is not None else document.data.get("days"))
+            clear_changed_routes(draft, _active_days(document.data))
             try:
                 validate_result({"days": draft, "trip": meta})
             except TripTimingError as error:
@@ -711,12 +706,7 @@ def trip_router(agents, store, error_type):
             activity.update(title=matches[0]["name"], place=matches[0], x=0, y=0)
             if not previous_place or previous_place["id"] != matches[0]["id"]:
                 activity.pop("cost", None)
-            if previous_place != matches[0]:
-                for item in _activities(draft):
-                    route = item.get("incomingRoute") or {}
-                    if matches[0]["id"] in (route.get("fromPlaceId"), route.get("toPlaceId")):
-                        item.pop("incomingRoute", None)
-            clear_changed_routes(draft)
+            clear_changed_routes(draft, data["draft"])
             return store.mutate(identifier, lambda current: current.update(draft=draft, draftTrip=meta), expected_revision=payload.expected_revision)
 
     @router.post("/{identifier}/trip/apply")
