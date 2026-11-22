@@ -6,6 +6,7 @@ import asyncio
 from copy import deepcopy
 from decimal import Decimal
 import json
+import re
 from typing import Annotated, Any, Awaitable, Callable, Generic, Literal, TypeVar
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from jsonschema import validate as validate_schema
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from referencing import Registry
 
+from supertravel_server.mcp_client import ToolError
 from supertravel_server.model import ModelClient, ModelError
 from supertravel_server.trip_routes import RouteSelectionExpired, check_selected_routes_fresh
 from supertravel_server.trips import ROUTE_TOOL as TRIP_ROUTE_TOOL, SEARCH_TOOL, SUBMIT_TOOL, TripRequest, TripResearch, trip_overview
@@ -50,6 +52,7 @@ class Route(BaseModel):
     steps: list[str] = Field(default_factory=list, max_length=8)
     replace_active: bool = False
     trip: TripRequest | None = Field(default=None, description="仅 kind=plan 且即将执行具体行程生成或修改时填写；answer、clarification、progress 必须为 null，即使已知目的地和天数。")
+    transport_scope: Literal["leg", "whole_trip"] | None = Field(default=None, description="本次明确要求改变某一段或整程交通时填写；仅调整时间等其他请求留空。")
     stops_per_day_evidence: str | None = Field(default=None, min_length=1, max_length=1000, description="已有行程续改中指定每天地点数时，逐字引用本次 request 中的数量要求；不能只引用历史。未指定则为 null。")
     preference_summary: str | None = Field(default=None, max_length=1000)
     preference_application: PreferenceApplication | None = Field(default=None, description="收到 travel_preferences 且 kind=plan 时必填四个字段的实际采用声明；服务端校验并生成摘要。")
@@ -89,7 +92,8 @@ answer、clarification、progress 必须填写 trip=null、steps=[]；即使已�
 “本次不用默认偏好”仅表示忽略常用偏好，不要求重新收集全部可选条件。
 用户明确要求先澄清时，先简述已知的目的地和天数，只问真正必需缺项；没有必需缺项时用 answer 说明信息已足够，可询问是否直接规划，本轮不得擅自开始任务，也不要附加可选条件问卷。仅聊天、天气查询等 trip=null。
 短行程优先用 2～3 步：查真实地点与相邻交通、整理合理时间安排、提交。超过3天时按每1～2天分组查询和安排，最后一步整合提交，最多8步；不要把7天全部查询塞入一个执行步骤。已有地点可复用；用户只改时间时无需再查地点。已有空日属于自由安排，未要求增加活动时保留；首次生成每天必须有活动，整程至少保留一项。
-用户明确步行、自驾或公共交通时填写 trip.transport_mode=walking、driving或transit；修改行程而未改方式时沿用 current_trip.trip.transportMode，新行程未指定才默认walking，不要自行替用户更换出行方式。
+已有行程的 transport_mode 只表示整程默认。普通时间、备注和顺序修改沿用 current_trip.trip.transportMode，可省略 transport_mode。新行程未指定才默认 walking。
+用户只改一段交通时填 transport_scope=leg，使用 answer 指向这段的接驳编辑，不执行或许诺整程切换。只有本次明确改变整程默认才设 transport_scope=whole_trip，整程变更保留其余已明确指定的单段方式。
 current_candidates 是未排期候选池，独立于 current_trip。普通聊天和行程调整保留候选；只有用户明确要求把某候选排入日程时才在计划中指定该候选 id。候选 destination 必须与本次目的地同城，换城时仍保留原候选，不能擅自安排跨城候选。
 相邻地点的交通耗时通过 query_trip_route 查询；查不到则明确未知，不得把直线距离或模型估算当真实路线。费用只展示已有依据或用户填写金额，不编造票价。
 只能使用开发者提供的旅行工具，不能操作本机文件、运行shell或索取/读取密钥。
@@ -113,7 +117,7 @@ current_candidates 是未排期候选，不属于 available_places。只有用�
 每个步骤聚焦计划指定的日期或分组，已有足够地点后停止扩展查询，完成本步就简短汇报；不要在单步重复调查整个多日行程。
 每次查询优先百度，查询词明确、目的地已由服务端固定。一次查询可返回多个候选，无需逐个重复查询。
 trip_request.map_provider 非空时仅使用其指定地图，额度不足也不能换服务。stops_per_day 非空时每天必须恰好该数量，不额外添加餐饮点。
-确定活动顺序后，用 query_trip_route 查询每天相邻地点间交通，mode须为trip_request.transport_mode；仅传place_id，不传或转换坐标。已有相同地点/方式的有效结果可复用。
+确定顺序后，先检查 current_trip 中对应日期和相邻活动 ID。未变的路段沿用 incomingTransportOverride.mode 或整程默认，复用当前有效记录（包括用户选用公交）。有需要才查 query_trip_route，传 day、两端 place_id 及可用的 from_activity_id、to_activity_id；新接驳使用 trip_request.transport_mode。不可为每段试查所有方式、替换手选方案、传坐标，或在 submit_trip 中提交方式、路线、选用标记。
 current_trip 中 incomingRoute.selection=user 是用户选用的公交方案：日期、相邻活动 ID、完整地点和交通方式不变且新鲜时原样保留，无需重新查询，不用默认首方案替换。同一对地点在不同天的选择各自独立；只改时间或备注不改变选择。用户选用方案过期时请反馈需要在编辑中重新比较并选择，不能自动选回首方案。
 路线status=unknown代表未核实，须在行程中保留未知项，不编造耗时或反复请求同一失败路线。已知耗时要留足接驳时间；不足时修订时间或用report_plan_issue反馈冲突。
 修改行程时保留未要求改变的安排。提交已有活动必须把 current_trip 中的 id 填入 activity_id，跨日移动也不变；同一 POI 不同天的活动各自有独立 id，不能混用，不能重复引用或把旧 id 绑定到另一个 place_id。新增活动不填 activity_id。
@@ -213,6 +217,26 @@ def _place_options(places) -> list[dict]:
     return [{key: place[key] for key in ("id", "name", "address", "provider")} for place in places]
 
 
+def _mentioned_modes(text):
+    names = {"walking": ("步行", "走路", "徒步", "walk"), "driving": ("驾车", "自驾", "开车", "driv"),
+             "transit": ("公交", "公共交通", "地铁", "transit", "public transport")}
+    return {mode for mode, words in names.items() if any(word in text.lower() for word in words)}
+
+
+def _requested_transport_scope(request, mode):
+    # Bind the scope and mode in one clause. A local edit must not widen to the whole trip.
+    scope = None
+    for clause in re.split(r"[，,。.;；！!\n]", request.lower()):
+        local = re.search(r"(?:这(?:一)?段|本段|单段|→|->|(?:从|把|将).+?(?:到|至)).*?(?:改为|改用|改成|换成|设为|指定为)(.+)", clause)
+        if local and not re.search(r"不|别|如果|[?？]", clause) and _mentioned_modes(local[1]):
+            return "leg"
+        if (re.search(r"整程|全程|整个行程|整趟|所有路段|全部路段|默认|whole trip|entire trip|default", clause)
+                and not re.search(r"不|别|如果|只把|仅把|这段|本段|一段|→|->|[?？]|\b(not|only|if)\b", clause)
+                and _mentioned_modes(clause) == {mode}):
+            scope = "whole_trip"
+    return scope
+
+
 class AgentSession:
     def __init__(self, model: ModelClient, tools: Any, on_state: Callable[[dict[str, Any]], Awaitable[None]], *, max_tool_calls: int | None = None):
         if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 1):
@@ -295,6 +319,12 @@ class AgentSession:
             return await correct_structure(json.dumps([{key: item[key] for key in ("loc", "type")} for item in errors[:3]], ensure_ascii=False))
         except ValueError as error:
             return await correct_structure(str(error))
+        current = (trip_context or {}).get("trip") or {}
+        if route.trip and "transport_mode" not in route.trip.model_fields_set:
+            if failure and state.get("trip_request"):
+                route.trip.transport_mode = state["trip_request"]["transport_mode"]
+            elif current.get("destination", "").removesuffix("市") == route.trip.destination.removesuffix("市"):
+                route.trip.transport_mode = current.get("transportMode") or "walking"
         if trip_context and trip_context.get("trip") and route.trip and route.trip.stops_per_day is not None:
             quote = route.stops_per_day_evidence
             # Quotes establish current-request provenance, not proof of natural-language meaning.
@@ -322,6 +352,16 @@ class AgentSession:
             route = await self._route(text, history or [], trip_context=trip_context, travel_preferences=travel_preferences)
             if self._closed:
                 raise ModelError("agent_closed", "会话服务已关闭，请重新连接。")
+            current = (trip_context or {}).get("trip") or {}
+            scope = _requested_transport_scope(text, route.trip.transport_mode) if current and route.trip else None
+            if current and (route.transport_scope == "leg" or scope == "leg"):
+                return {"kind": "answer", "content": "请在行程中找到这两个相邻活动，在后一个活动的接驳编辑中指定本段方式。其他路段会沿用各自的设置。"}
+            if (route.trip and current.get("destination", "").removesuffix("市") == route.trip.destination.removesuffix("市")
+                    and route.trip.transport_mode != (current.get("transportMode") or "walking")):
+                if route.transport_scope is None and not _mentioned_modes(text):
+                    route.trip.transport_mode = current.get("transportMode") or "walking"
+                elif scope != "whole_trip":
+                    return {"kind": "clarification", "content": "请确认是否要更改整程默认交通方式。只改一段时，请打开后一个活动的接驳编辑。"}
             if route.kind == "progress":
                 state = self.snapshot()
                 return {"kind": "progress", "content": self._progress_text(state), "run_id": state["run_id"]}
@@ -407,7 +447,7 @@ class AgentSession:
             same_city = trip and metadata.get("destination", "").removesuffix("市") == trip.destination.removesuffix("市")
             candidate_snapshot = deepcopy(existing.get("candidates", []))
             research = TripResearch(self.tools, trip.destination, existing.get("days") if same_city else None,
-                                    map_provider=trip.map_provider, existing_candidates=candidate_snapshot) if trip else None
+                                    map_provider=trip.map_provider, existing_candidates=candidate_snapshot, default_mode=trip.transport_mode) if trip else None
             if not tools and not (research and (research.places or research.candidates)):
                 raise StepFailure("开发者工具服务尚未提供可用工具，无法执行实时查询。")
             definitions = {tool["name"]: tool for tool in tools}
@@ -554,7 +594,7 @@ class AgentSession:
                     places = await research.search(arguments["query"], arguments.get("provider"))
                     result = {"content": [{"type": "text", "text": json.dumps({"places": _place_options(places), "notice": "没有结果时不可编造地点；请调整查询词或改用其他可用服务。"}, ensure_ascii=False)}]}
                 elif name == "query_trip_route" and research:
-                    route = await research.route(arguments["from_place_id"], arguments["to_place_id"], arguments.get("mode", "walking"))
+                    route = await research.route(**arguments)
                     result = {"content": [{"type": "text", "text": json.dumps(route, ensure_ascii=False)}]}
                 else:
                     result = await self.tools.call_tool(name, arguments)
@@ -566,6 +606,8 @@ class AgentSession:
                 self._check(run_id)
                 if attempt == 0 and getattr(error, "retryable", False):
                     continue
+                if isinstance(error, ToolError) and error.code == "tool_arguments" and name == "query_trip_route":
+                    raise StepFailure(str(error)) from None
                 if getattr(error, "code", None) in ("tool_quota", "tool_auth"):
                     raise StepFailure(f"工具 {name} 的服务额度或权限不可用，请改用其他服务，勿重复请求同一服务。") from None
                 raise StepFailure(f"工具 {name} 调用失败，请检查服务或调整步骤。") from None
