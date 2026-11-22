@@ -445,6 +445,15 @@ class TripResearch:
 
     async def route(self, from_place_id: str, to_place_id: str, mode: str | None = None, *,
                     day: int | None = None, from_activity_id: str | None = None, to_activity_id: str | None = None) -> dict:
+        if day is not None and (from_activity_id is None or to_activity_id is None):
+            matches = [target for target in self.activities.values()
+                       if target["day"] == day and target["place"]["id"] == to_place_id
+                       and to_activity_id in (None, target["id"]) and from_activity_id in (None, target.get("from_id"))
+                       and (previous := self.activities.get(target.get("from_id"))) and previous["place"]["id"] == from_place_id]
+            if len(matches) > 1:
+                raise ToolError("tool_arguments", False, "当日有多段相同地点的接驳，请提供活动 ID 以确定路段。")
+            if matches:
+                from_activity_id, to_activity_id = matches[0]["from_id"], matches[0]["id"]
         origin = self._route_place(from_place_id, from_activity_id)
         destination = self._route_place(to_place_id, to_activity_id)
         if self.map_provider and any(place and place["provider"] != self.map_provider for place in (origin, destination)):

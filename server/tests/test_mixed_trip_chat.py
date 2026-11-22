@@ -187,6 +187,45 @@ def test_chat_reorder_invalidates_old_overrides_and_evidence_even_for_a_repeated
         assert len(tools.calls) == 6
 
 
+@pytest.mark.parametrize("ids", [{}, {"from_activity_id": "b"}, {"to_activity_id": "c"}, {"from_activity_id": "b", "to_activity_id": "c"}])
+def test_dated_leg_resolves_walking_before_checking_transfer_time(app, ids):
+    with TestClient(app) as client:
+        doc, tools = mixed_draft(client)
+        days = doc["data"]["draft"]
+        first, before, target = days[0]["activities"][:3]
+        first["time"] = "07:00"
+        before.update(time="09:00", duration="约 45 分钟")
+        target.update(time="10:00")
+        target.pop("incomingRoute")
+        tools.result["structuredContent"]["result"]["routes"][0]["duration"] = 1200
+        research = TripResearch(tools, "杭州", days, default_mode="driving")
+        route = asyncio.run(research.route("baidu:b", "baidu:c", "walking", day=1, **ids))
+        assert (route["mode"], route["durationMinutes"], tools.calls[-1][1]["model"]) == ("walking", 20, "walking")
+        with pytest.raises(TripTimingError, match="还差 5 分钟"):
+            research.submit(submission({"days": days}, identifiers=True), request(transport_mode="driving"))
+        assert len(tools.calls) == 7
+
+
+def test_dated_repeated_leg_requires_an_activity_id_before_query(app):
+    with TestClient(app) as client:
+        doc, tools = mixed_draft(client)
+        days = doc["data"]["draft"]
+        first, second = [day["activities"] for day in days]
+        duplicate = deepcopy(first[1:3])
+        for stop, identifier in zip(duplicate, ("b2", "c2")):
+            stop["id"] = identifier
+            stop.pop("incomingTransportOverride", None)
+            stop.pop("incomingRoute", None)
+        first.extend(duplicate)
+        second[1]["place"]["sourceLocation"]["longitude"] += 1
+        research = TripResearch(tools, "杭州", days, default_mode="driving")
+        with pytest.raises(ToolError, match="活动 ID"):
+            asyncio.run(research.route("baidu:b", "baidu:c", day=1))
+        assert asyncio.run(research.route("baidu:b", "baidu:c", day=1, to_activity_id="c")) == first[2]["incomingRoute"]
+        assert asyncio.run(research.route("baidu:b", "baidu:c", day=2)) == second[2]["incomingRoute"]
+        assert len(tools.calls) == 6
+
+
 def test_mixed_leg_timing_uses_real_walking_minutes_not_the_default_cache(app):
     with TestClient(app) as client:
         doc, tools = mixed_draft(client)
