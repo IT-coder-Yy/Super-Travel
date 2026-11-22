@@ -90,9 +90,11 @@ node --test server/scripts/tools-dev.test.mjs
 
 高德 MCP 清单遇到连接或超时失败时，在原超时预算内最多重试一次；不自动重试业务调用。最终失败保留基础地图 API，并在工具状态中显示 MCP 故障，清单沿用工具服务既有的 5 分钟缓存；缓存到期后重新测试连接会重新发现。
 
-## 整程交通方式草稿
+## 整程和单段交通方式草稿
 
-`POST /api/conversations/{id}/trip/transport` 接受 `expected_revision` 和 `mode: walking | driving | transit`，返回现有会话结构。它基于已有草稿或正式行程更新 `draftTrip.transportMode`，清除不匹配方式的路线及其参考报价，保留用户活动、时间、费用、备注、候选和收藏。选择与保存不调用模型或地图；相同方式不写入新修订。旧 JSON 缺少方式时仍按步行读取，无新增持久化字段。
+`POST /api/conversations/{id}/trip/transport` 接受 `expected_revision` 和 `mode: walking | driving | transit`，返回现有会话结构。它基于已有草稿或正式行程更新 `draftTrip.transportMode`，只清除与该段有效方式不匹配的路线及其参考报价，保留单段指定，以及用户活动、时间、费用、备注、候选和收藏。选择与保存不调用模型或地图；相同方式不写入新修订。旧 JSON 沿用原有整程方式，缺少整程方式时按步行读取。
+
+`POST /api/conversations/{id}/trip/routes/transport` 接受 `expected_revision`、目标 `activity_id` 和 `mode`。`walking`、`driving` 或 `transit` 将这一段固定为指定方式，`null` 恢复跟随整程。选择保存在草稿目标活动的可选字段 `incomingTransportOverride`，绑定行程日和前一个活动 ID。
 
 应用复用 `/trip/apply`：复用仍有效的同方式路线，其余单次最多 12 次业务核查尝试（失败或不支持的地点对也计数），单段 12 秒、总计 30 秒。次数是业务尝试上限，并非 HTTP 请求数或计费次数；不新增业务重试或跨供应商兜底。超预算、配额不足、不可用路线明确为未知，不作为零耗时。已知硬冲突返回 422 并保留正式版和已存草稿；修订冲突返回 409，保存失败不能当作成功。整程指各日相邻活动接驳，不包含往返目的地及跨日抵离。
 
@@ -107,9 +109,9 @@ node --test server/scripts/tools-dev.test.mjs
 
 ## 公交单段比较与选用
 
-- `POST /api/conversations/{id}/trip/routes/options`：`{expected_revision, activity_id}`。以目标活动和当日前一活动为接驳段，整程方式必须为 `transit`。复用供应商坐标与现有路线服务，单次业务查询最多 12 秒、不新增重试；同一响应按返回顺序取前 3 个有效、规范化后可区分的顶层方案，返回 `{revision, options: [{option_id, route}], reason?}`，不写会话。缺少原始坐标、无有效方案或供应商失败时返回空列表及原因，不补造结果、不跨供应商拼接。
+- `POST /api/conversations/{id}/trip/routes/options`：`{expected_revision, activity_id}`。以目标活动和当日前一活动为接驳段，该段有效方式必须为 `transit`，可以来自整程默认或该段的明确选择。复用供应商坐标与现有路线服务，单次业务查询最多 12 秒、不新增重试；同一响应按返回顺序取前 3 个有效、规范化后可区分的顶层方案，返回 `{revision, options: [{option_id, route}], reason?}`，不写会话。缺少原始坐标、无有效方案或供应商失败时返回空列表及原因，不补造结果、不跨供应商拼接。
 - `POST /api/conversations/{id}/trip/routes/select`：`{expected_revision, option_id}`，返回现有 Conversation。客户端不能传路线、坐标或价格正文。票据仅在内存保存，每会话最新一组、5 分钟；绑定修订、日期、相邻活动 ID、完整地点、公交方式和工具实例。重新查询替换旧组，配置变化/重启失效，成功选用即消费；写盘失败不消费，可重试。查询结束及选用前均检查修订与忙碌状态。
 
-仅新增可选 `incomingRoute.selection: "user"`，不持久化比较列表或票据，不改变 schema 1。旧 JSON 继续按原规则读取。选用只保存现有草稿；即使所选耗时与日程冲突也可先保存，应用仍执行原有时间校验。未过期且日期、相邻活动身份、完整地点、方式均不变的用户方案在应用和普通聊天续改中原样保留，同一地点对的不同日期可分别选用；模型不能伪造选用标记。
+用户选中的方案带有可选字段 `incomingRoute.selection: "user"`，不持久化比较列表或票据，不改变 schema 1。旧 JSON 继续按原规则读取。选用只保存现有草稿；即使所选耗时与日程冲突也可先保存，应用仍执行原有时间校验。未过期且日期、相邻活动身份、完整地点、方式均不变的用户方案在应用和普通聊天续改中原样保留，同一地点对的不同日期可分别选用；模型不能伪造选用标记。
 
 用户选用证据超过 24 小时，应用返回 `409 route_selection_expired`，保留草稿并要求重新比较选择；不会静默改为首方案。日期/地点/相邻活动/方式变化清除失效证据，移入候选剥离路线。Markdown/PDF 标为“用户选用方案”，其他默认记录仍标首方案；同次响应的 `taxiEstimates` 保持独立，不属于公交方案价格。查询的 5 分钟票据与路线的 24 小时新鲜度不等同于未来出游日的班次或价格保证。
