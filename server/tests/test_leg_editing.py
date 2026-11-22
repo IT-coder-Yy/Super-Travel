@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from supertravel_server import candidates
+from supertravel_server.app import create_app
 from supertravel_server.candidates import as_candidate
 from supertravel_server.mcp_client import ToolError
 from supertravel_server.trip_api import clear_changed_routes
@@ -197,6 +198,75 @@ def test_park_preview_and_insert_keep_the_ticket_routes_and_both_outer_choices(a
                 expected["draft"][0]["activities"][position]["incomingRoute"]["queriedAt"] = fresh["queriedAt"]
         assert days == expected["draft"]
         assert len(tools.calls) == before_apply + (0 if available else 2)
+
+
+@pytest.mark.parametrize("undo", ["discard", "restore"])
+def test_four_edits_in_one_draft_keep_only_surviving_choices_after_restart(app, tmp_path, undo):
+    with TestClient(app) as client:
+        original, routes = mixed_draft(client)
+        before = stops(original)
+        parked = park(client, original, "c")
+        reordered = move(client, parked, activity_id="a", target_day=1, target_index=3, time="19:00")
+        assert reordered.status_code == 200, reordered.text
+        assert stops(reordered.json())["f"] == before["f"]
+        moved = move(client, reordered.json(), activity_id="e", target_day=2, target_index=1, time="10:00")
+        assert moved.status_code == 200, moved.text
+
+        search = app.state.agents.tools = SearchTools()
+        replaced = replace_place(client, moved.json(), token(client, moved.json()), activity_id="b")
+        assert replaced.status_code == 200, replaced.text
+        assert len(search.calls) == 1
+        app.state.agents.tools = routes
+        queries = len(routes.calls)
+        assert queries == 6  # All six were used to prepare the mixed itinerary.
+        preview = slots(client, replaced.json(), candidate_id="c", day=1)
+        assert preview.status_code == 200, preview.text
+        option = next(item for item in preview.json()["options"] if item["position"] == 1)
+        assert read(app, original) == replaced.json()
+        assert len(routes.calls) == queries + 6
+        after_preview = len(routes.calls)
+        inserted = insert(client, replaced.json(), option, "13:00")
+        assert inserted.status_code == 200, inserted.text
+        checkpoint = inserted.json()
+        data = checkpoint["data"]
+        assert [[item["id"] for item in day["activities"]] for day in data["draft"]] == [
+            ["b", "c", "f", "a"], ["u", "e", "v", "w"]]
+        edited = stops(checkpoint)
+        assert edited["w"] == before["w"] and edited["w"]["incomingRoute"]["selection"] == "user"
+        assert [key for key, stop in edited.items() if stop.get("incomingTransportOverride")] == ["w"]
+        assert edited["b"]["place"]["id"] == "baidu:fixture-west" and "cost" not in edited["b"]
+        assert edited["v"]["place"] == before["v"]["place"] and edited["v"]["cost"] == before["v"]["cost"]
+        assert edited["c"]["cost"]["amountFen"] == 0 and "cost" not in edited["f"]
+        assert all(stop["description"] == before[key]["description"] for key, stop in edited.items())
+        assert data["draftCandidates"] == original["data"]["candidates"]
+        for key in ("days", "trip", "candidates", "favorites"):
+            assert data[key] == original["data"][key]
+        assert len(routes.calls) == after_preview
+
+        if undo == "restore":
+            applied = post(client, checkpoint, "apply")
+            assert applied.status_code == 200, applied.text
+            checkpoint = applied.json()
+            final = {item["id"]: item for day in checkpoint["data"]["days"] for item in day["activities"]}
+            assert final["w"] == before["w"]
+            for key in ("c", "f"):
+                assert final[key]["incomingRoute"] == edited[key]["incomingRoute"]
+                assert final[key]["incomingRoute"]["mode"] == "driving"
+            for key in ("a", "e", "v"):
+                assert "incomingRoute" not in edited[key]
+                assert final[key]["incomingRoute"]["status"] == "verified" and final[key]["incomingRoute"]["mode"] == "driving"
+            assert len(routes.calls) == after_preview + 3
+
+    calls_before_restart = len(routes.calls)
+    with TestClient(create_app(tmp_path, "trip-api-fixture")) as reopened:
+        reopened.app.state.agents.tools = routes
+        loaded = reopened.get(f"/api/conversations/{original['id']}", headers=AUTH).json()
+        assert loaded == checkpoint
+        undone = post(reopened, loaded, undo)
+        assert undone.status_code == 200, undone.text
+        for key in ("days", "trip", "candidates", "favorites"):
+            assert undone.json()["data"][key] == original["data"][key]
+        assert undone.json()["data"]["draft"] is None and len(routes.calls) == calls_before_restart
 
 
 def test_an_adjacent_pair_moved_together_to_a_new_day_does_not_recover_its_choices(app):
