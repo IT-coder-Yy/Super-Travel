@@ -172,12 +172,19 @@ test('票据失效可直接重查，保存遇到并发修订则重读后才能�
   await expect(comparison(page).getByRole('button', { name: '重新读取会话' })).toHaveCount(0);
   expect(await trip.read()).toEqual(current);
   await compare(page);
-  await comparison(page).getByRole('radio', { name: /方案 3/ }).check();
+  const choice = comparison(page).getByRole('radio', { name: /方案 2/ });
+  await choice.check();
   const newer = await concurrentEdit(localApp, current);
   await page.getByRole('button', { name: '保存方案到草稿' }).click();
   await expect(comparison(page).getByRole('alert')).toContainText('会话已被更新');
-  await expect(comparison(page).getByRole('radio')).toHaveCount(0);
+  await expect(choice).toBeChecked();
+  await expect(choice).toBeDisabled();
   const calls = await trip.calls();
+  await comparison(page).getByRole('button', { name: '重新读取会话', exact: true }).click();
+  await comparison(page).getByRole('button', { name: '保留本地输入' }).click();
+  await expect(choice).toBeChecked();
+  expect(await trip.read()).toEqual(newer);
+  expect(await trip.calls()).toEqual(calls);
   await comparison(page).getByRole('button', { name: '返回编辑' }).click();
   await expect(editor(page).getByRole('button', { name: '比较公交方案' })).toBeDisabled();
   await expect(editor(page).getByRole('button', { name: '切换交通方式' })).toBeDisabled();
@@ -200,21 +207,32 @@ test('票据失效可直接重查，保存遇到并发修订则重读后才能�
   expect(saved.data.favorites).toEqual(newer.data.favorites);
 });
 
-test('首次比较遇到并发修订，重读后只查询最新日期的相邻活动', async ({ page, localApp }) => {
+for (const selected of [false, true]) test(`${selected ? '选中后再查' : '首次比较'}遇到并发修订，重读后只查询最新日期的相邻活动`, async ({ page, localApp }) => {
   const trip = await setup(page, localApp);
   await open(page);
+  const choice = comparison(page).getByRole('radio', { name: /方案 2/ });
+  if (selected) {
+    await compare(page);
+    await choice.check();
+  }
+  const calls = await trip.calls();
   const newer = await concurrentEdit(localApp, await trip.read(), 2);
-  await comparison(page).getByRole('button', { name: '查询公交方案' }).click();
+  await comparison(page).getByRole('button', { name: selected ? '重新查询方案' : '查询公交方案' }).click();
   await expect(comparison(page).getByRole('alert')).toContainText('会话已被更新');
   await comparison(page).getByRole('button', { name: '重新读取会话' }).click();
+  if (selected) {
+    await expect(choice).toBeChecked();
+    await expect(choice).toBeDisabled();
+    await comparison(page).getByRole('button', { name: '确认重新读取会话' }).click();
+  }
   await expect(editor(page)).toBeVisible();
-  expect(await trip.calls()).toHaveLength(0);
+  expect(await trip.calls()).toEqual(calls);
   await editor(page).getByRole('button', { name: '比较公交方案' }).click();
   await expect(comparison(page)).toContainText('第 2 天');
   const query = page.waitForRequest(request => request.url().endsWith('/trip/routes/options'));
   await compare(page);
   expect((await query).postDataJSON()).toEqual({ expected_revision: newer.revision, activity_id: newer.data.draft![1]!.activities[1]!.id });
-  expect(await trip.calls()).toHaveLength(1);
+  expect(await trip.calls()).toHaveLength(calls.length + 1);
   expect(await trip.read()).toEqual(newer);
 });
 
@@ -475,7 +493,7 @@ test('单段保存失败或另一窗口撤销草稿时，保留选择直到确�
   expect(await trip.calls()).toHaveLength(0);
 });
 
-test('单段保存应答丢失时先重读，已落盘的选择只写一次', async ({ page, localApp }) => {
+for (const failure of ['丢失', '超时']) test(`单段保存应答${failure}时先重读，已落盘的选择只写一次`, async ({ page, localApp }) => {
   const trip = await setup(page, localApp);
   await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
   await editor(page).getByRole('button', { name: '设置本段方式' }).click();
@@ -483,13 +501,20 @@ test('单段保存应答丢失时先重读，已落盘的选择只写一次', as
   await form.getByLabel('本段接驳方式').selectOption('walking');
   const before = await trip.read();
   let writes = 0;
+  let release!: () => void;
+  const hold = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/trip/routes/transport', async route => {
     writes++;
-    await route.fetch();
-    await route.abort('failed');
+    const response = await route.fetch();
+    if (failure === '丢失') return route.abort('failed');
+    await hold; // Hold the successful response past the real 15-second fetch deadline.
+    await route.fulfill({ response });
   });
   await form.getByRole('button', { name: '保存方式到草稿' }).click();
-  await expect(form.getByRole('alert')).toContainText('保存结果尚未确认');
+  try {
+    await expect.poll(async () => (await trip.read()).revision).toBe(before.revision + 1);
+    await expect(form.getByRole('alert')).toContainText('保存结果尚未确认', { timeout: 20_000 });
+  } finally { release(); }
   await expect(form.getByRole('button', { name: '保存方式到草稿' })).toHaveCount(0);
   await form.getByRole('button', { name: '重新读取会话', exact: true }).click();
   await form.getByRole('button', { name: '确认重新读取会话' }).click();

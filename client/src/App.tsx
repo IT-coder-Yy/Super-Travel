@@ -58,7 +58,7 @@ export default function App() {
   const [activityAction, setActivityAction] = useState<ActivityActionState | null>(null)
   const [transportAction, setTransportAction] = useState<TransportActionState | null>(null)
   const [routeAction, setRouteAction] = useState<RouteComparisonState | null>(null)
-  const [staleRevision, setStaleRevision] = useState<(Pick<ConversationSummary, 'id' | 'revision'> & { message?: string }) | null>(null)
+  const [staleRevision, setStaleRevision] = useState<(Pick<ConversationSummary, 'id' | 'revision'> & { message?: string; unsavedChoice?: boolean }) | null>(null)
   const [placeSaving, setPlaceSaving] = useState(false)
   const [editError, setEditError] = useState<{ message: string; activityId?: string }>({ message: '' })
   const placeError = editError.message
@@ -303,10 +303,10 @@ export default function App() {
     placeSaveRef.current = operation
     try { await operation } finally { placeSaveRef.current = null; setPlaceSaving(false) }
   }
-  function showRevisionConflict(error: unknown, expected = current) {
+  function showRevisionConflict(error: unknown, expected = current, unsavedChoice = false) {
     if (!(error instanceof ApiError) || error.status !== 409 || error.code !== 'revision_conflict') return false
     if (!expected || currentRef.current?.id !== expected.id || currentRef.current.revision !== expected.revision) return false
-    setStaleRevision({ id: expected.id, revision: expected.revision })
+    setStaleRevision({ id: expected.id, revision: expected.revision, unsavedChoice })
     setPlaceError('')
     return true
   }
@@ -358,13 +358,14 @@ export default function App() {
       try { document = await save() }
       catch (error) {
         // A lost response or unreadable JSON may follow a successful disk write.
-        if (!(error instanceof TypeError || error instanceof SyntaxError)) throw error
+        const aborted = error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')
+        if (!(aborted || error instanceof TypeError || error instanceof SyntaxError)) throw error
       }
       if (currentRef.current?.id !== action.id || currentRef.current.revision !== action.revision) {
         throw new Error('会话已变化，请重新打开此会话查看保存结果。')
       }
       if (document?.id !== action.id || !isWorkspaceData(document.data)) {
-        setStaleRevision({ id: action.id, revision: action.revision, message: '保存结果尚未确认，请重新读取会话查看草稿。' })
+        setStaleRevision({ id: action.id, revision: action.revision, unsavedChoice: true, message: '保存结果尚未确认，请重新读取会话查看草稿。' })
         return
       }
       setDocument(document); change(document.data, false)
@@ -676,7 +677,7 @@ export default function App() {
 
   const editorError = placeError && <p ref={editErrorRef} tabIndex={-1} className="inline-error" role="alert">{placeError}</p>
   const conflictNotice = routeConflict && (editError.activityId !== routeConflict.activityId || !day?.activities.some(item => item.id === editError.activityId)) && <div className="inline-error" role="alert">{routeConflict.message} <button type="button" className="text-button" onClick={() => showLegError(routeConflict.message, routeConflict.activityId)}>查看冲突路段</button></div>
-  const editorRecovery = needsReload && <ConversationReload key={placeFlow ? 'action' : 'edit'} message={staleRevision.message} hasUnsaved={dirty || hasInvalidTime || !!transportAction?.leg} onReload={reloadCurrentConversation}
+  const editorRecovery = needsReload && <ConversationReload key={placeFlow ? 'action' : 'edit'} message={staleRevision.message} hasUnsaved={dirty || hasInvalidTime || !!(staleRevision.unsavedChoice && (transportAction || routeAction))} onReload={reloadCurrentConversation}
     onBack={routeAction || transportAction ? closeEditorAction : undefined} />
   const recoverySection = <section className="recovery-section"><h3>会话恢复</h3><p>损坏的会话不影响其他历史记录。恢复前会另存损坏原件，备份保持不变。</p>
     <button className="secondary-button" onClick={() => void scanRecovery()} disabled={!ready || scanning || !!recovering}>{scanning ? '扫描中…' : '扫描本地备份'}</button>
@@ -737,8 +738,8 @@ export default function App() {
     {panel === 'new' && <Dialog title="开始一段新旅程" onClose={() => setPanel(null)}><div className="new-trip-content"><p>先给这段旅程取个名字。</p><label className="field-label">会话名称<input autoFocus maxLength={80} value={newTitle} onChange={event => setNewTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void newConversation() }} /></label><p className="muted-note">创建空白会话，再告诉旅伴国内目的地、1～7 天行程和你的偏好。</p><button className="primary-button" disabled={!ready || !newTitle.trim() || saving || !!recovering || applying || !!locating} onClick={() => void newConversation()}><Plus size={17} />创建本地会话</button></div></Dialog>}
     {panel === 'edit' && day && <Dialog className={routeAction ? 'dialog--route-comparison' : ''} title={placePicker ? placePicker.activity ? '替换地点' : '新增地点' : activityAction ? activityAction.kind === 'move' ? '移动活动' : '删除活动' : transportAction ? (transportAction.leg ? '本段交通方式' : '整程交通方式') : routeAction ? '比较公交方案' : '编辑当天行程'} onClose={() => { if (placePicker || activityAction || transportAction || routeAction) closeEditorAction(); else setPanel(null) }} wide busy={applying || !!locating || preparingPlace || placeSaving}><div className="edit-content">
       {placePicker ? <PlacePicker conversation={placePicker.conversation} day={placePicker.day} destination={trip!.destination} activity={placePicker.activity} initialTime={placePicker.initialTime} onSelect={savePlaceSelection} onCancel={closeEditorAction} /> : activityAction ? <ActivityAction kind={activityAction.kind} conversation={activityAction.conversation} activity={activityAction.activity} days={days} initialTargetIndex={activityAction.initialTargetIndex} initialTargetDay={activityAction.initialTargetDay} onSave={saveActivityAction} onPark={() => parkActivity(activityAction.activity)} onCancel={closeEditorAction} />
-        : transportAction ? <>{editorRecovery}<TripTransport days={days} currentMode={trip!.transportMode ?? 'walking'} leg={transportAction.leg} blocked={needsReload} onSave={saveTransport} onConflict={error => showRevisionConflict(error, transportAction.conversation)} onCancel={closeEditorAction} /></>
-        : routeAction ? editorRecovery || <RouteComparison {...routeAction} onSave={saveRouteSelection} onConflict={error => showRevisionConflict(error, routeAction.conversation)} onCancel={closeEditorAction} /> : <>
+        : transportAction ? <>{editorRecovery}<TripTransport days={days} currentMode={trip!.transportMode ?? 'walking'} leg={transportAction.leg} blocked={needsReload} onSave={saveTransport} onConflict={error => showRevisionConflict(error, transportAction.conversation, true)} onCancel={closeEditorAction} /></>
+        : routeAction ? <>{editorRecovery}<RouteComparison {...routeAction} blocked={needsReload} onSave={saveRouteSelection} onConflict={(error, selected) => showRevisionConflict(error, routeAction.conversation, selected)} onCancel={closeEditorAction} /></> : <>
       {editorRecovery}
       <div className="edit-notice"><Pencil size={17} /><span>正在编辑草稿。点击“应用修改”后才会替换已保存行程。</span></div>
       {trip && <p className="muted-note" id="activity-drag-help">拖动手柄调整当天顺序，或拖到其他日期标签；松开后确认日期、位置和时间，也可用移动按钮或键盘操作。</p>}
