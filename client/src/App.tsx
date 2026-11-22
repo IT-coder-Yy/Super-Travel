@@ -134,9 +134,7 @@ export default function App() {
       if (pending) return
       pending = true
       void readConversation(identifier).then(document => {
-        if (!disposed && currentRef.current?.id === identifier && !dirtyRef.current && isWorkspaceData(document.data)) {
-          setDocument(document); change({ ...document.data, selectedDay: dataRef.current.selectedDay }, false)
-        }
+        if (!disposed) applyAgentSnapshot(document)
       }).catch(error => { if (!disposed) notify(describeError(error), true) }).finally(() => { pending = false })
     }, 1200)
     return () => { disposed = true; window.clearInterval(timer) }
@@ -653,12 +651,18 @@ export default function App() {
     } catch (error) { notify(describeError(error), true) }
     finally { setSending(false) }
   }
+  function applyAgentSnapshot(document: Conversation) {
+    const current = currentRef.current
+    if (!current || current.id !== document.id || document.revision < current.revision || dirtyRef.current || !isWorkspaceData(document.data)) return
+    setDocument(document)
+    change({ ...document.data, selectedDay: dataRef.current.selectedDay }, false)
+  }
   async function stopAgent() {
     const identifier = currentRef.current?.id
     if (!identifier) return
     try {
       const document = await cancelAgent(identifier)
-      if (currentRef.current?.id === identifier && isWorkspaceData(document.data)) { setDocument(document); change(document.data, false) }
+      applyAgentSnapshot(document)
     } catch (error) { notify(describeError(error), true) }
   }
   async function selectDataDirectory() {
