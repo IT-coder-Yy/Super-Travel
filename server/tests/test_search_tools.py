@@ -11,6 +11,7 @@ import pytest
 
 from supertravel_server.search_tools import SearchTools
 from supertravel_server.mcp_client import ToolError
+from .test_agents import FakeModel, finish, reply, route, session_for
 
 
 SECRET = "fake-key/with+reserved=characters"
@@ -31,6 +32,36 @@ def test_catalog_is_available_without_credentials_and_is_not_mutable():
         with pytest.raises(ToolError) as error:
             await tools.call_tool("serper_search", {"query": "杭州"})
         assert error.value.code == "tool_configuration" and not error.value.retryable
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("has_hit", [True, False])
+def test_public_search_plan_returns_only_indexed_results_without_creating_trip(has_hit):
+    query = "杭州西湖"
+    sample = {"title": "固定测试笔记", "link": "https://www.xiaohongshu.com/explore/fixture", "snippet": "固定测试摘要"}
+    sent = []
+
+    def provider(request):
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"organic": [sample] if has_hit else []})
+
+    def execute(messages):
+        if messages[-1]["role"] != "tool":
+            return reply(name="xhs_search_public", arguments={"query": query, "count": 1})
+        result = json.loads(messages[-1]["content"])["structuredContent"]
+        return reply(result["results"][0]["url"] if result["results"] else result["notice"])
+
+    async def scenario():
+        model = FakeModel([route(steps=["搜索小红书公开笔记"])], execute)
+        session, _ = session_for(model, SearchTools(SECRET, transport=httpx.MockTransport(provider)))
+        result = await session.chat("请在小红书上找杭州西湖的公开笔记，不用做行程。")
+        assert result["kind"] == "started"
+        assert "xhs_search_public" in model.planner_calls[0][0]["content"]
+        state = await finish(session)
+        assert state["status"] == "completed" and "trip_result" not in state
+        assert (sample["link"] if has_hit else "未找到可用公开结果") in state["content"]
+        assert sent == [{"q": "site:xiaohongshu.com 杭州西湖", "num": 1}]
+
     asyncio.run(scenario())
 
 
