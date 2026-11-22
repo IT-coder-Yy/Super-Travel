@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
+import { setLegMode } from '../fixtures/leg-mode';
 
 test.use({ reducedMotion: 'reduce' });
 
@@ -66,13 +67,19 @@ test('真实形状选点：新增、替换、时长、正式隔离、应用与�
   expect(saved.data.draft[0].activities[2].place.id).toBe('baidu:fixture-tea-west');
   expect(saved.data.draft[0].activities[2].description).toBe('选择西岸同名店');
   const replacementId = saved.data.draft[0].activities[1].id;
+  const rows = page.locator('.editor-activity');
+  await setLegMode(page, rows.nth(1), 'transit');
+  await setLegMode(page, rows.nth(2), 'driving');
 
   await page.getByRole('button', { name: '替换地点', exact: true }).nth(1).click();
   await search(page, '固定测试花园');
   await page.getByRole('radio', { name: /固定测试花园地址/ }).check();
+  await expect(page.getByText(/更换为其他地点后，原费用将清空/)).toBeVisible();
   await expect(page.getByLabel('活动备注', { exact: true })).toHaveValue('替换地点仍需保留的用户备注');
   await page.getByRole('button', { name: '保存到草稿', exact: true }).click();
   await expect(page.getByLabel('地点', { exact: true }).nth(1)).toHaveValue('固定测试花园');
+  await expect(rows.nth(1).locator('.trip-leg')).toContainText('跟随整程（步行）');
+  await expect(rows.nth(2).locator('.trip-leg')).toContainText('跟随整程（步行）');
   await expect(page.getByLabel('活动费用（元）', { exact: true }).nth(1)).toHaveValue('');
   await expect(page.getByRole('button', { name: '替换地点', exact: true }).nth(1)).toBeFocused();
   await page.getByLabel('停留时长', { exact: true }).first().selectOption('75');
