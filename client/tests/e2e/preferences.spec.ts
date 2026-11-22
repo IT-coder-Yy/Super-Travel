@@ -150,6 +150,7 @@ test('运行中保存偏好不会中断任务或改变旧摘要，下个任务�
   await page.getByRole('button', { name: '关闭窗口', exact: true }).click();
   await expect(progress).toContainText('预算目标：3000元（常用偏好）；节奏：慢节奏（常用偏好）');
   await progress.getByRole('button', { name: '取消任务', exact: true }).click();
+  await expect.poll(async () => (await localApp.request(`/conversations/${document.id}`)).data.agent.status).toBe('cancelled');
   await localApp.request('/test-fixture/release', 'POST');
   await expect(progress).toContainText('任务已取消');
   await page.getByLabel('旅行对话输入').fill('偏好验收，再次查询杭州天气');
@@ -162,5 +163,6 @@ test('运行中保存偏好不会中断任务或改变旧摘要，下个任务�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'artifacts/b5-task-preferences-390.png', fullPage: true });
   await progress.getByRole('button', { name: '取消任务', exact: true }).click();
+  await expect.poll(async () => (await localApp.request(`/conversations/${document.id}`)).data.agent.status).toBe('cancelled');
   await localApp.request('/test-fixture/release', 'POST');
 });
