@@ -3,11 +3,12 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 import pytest
 
+from supertravel_server.agent_service import SendMessage
 from supertravel_server.app import create_app
 from supertravel_server.mcp_client import ToolError
 from supertravel_server.trip_routes import unknown_route
@@ -277,6 +278,7 @@ def test_expired_choice_keeps_the_active_draft_and_requires_manual_reselection(a
     ("只把公园到博物馆这段改为驾车", "whole_trip", "driving", "answer"),
     ("整程驾车，只把公园到博物馆改为步行", None, "walking", "answer"),
     ("不要把全程改成步行，只改公园到博物馆", "whole_trip", "walking", "clarification"),
+    ("把整程从步行改为公交", "whole_trip", "walking", "clarification"),
 ])
 def test_single_leg_chat_points_to_editor_without_starting_execution(app, message, scope, proposed, kind):
     with TestClient(app) as client:
@@ -291,7 +293,33 @@ def test_single_leg_chat_points_to_editor_without_starting_execution(app, messag
         assert read(app, doc) == doc
 
 
-def test_whole_trip_chat_changes_only_following_legs(app):
+@pytest.mark.parametrize("confirm", [False, True])
+def test_whole_trip_direction_and_its_confirmation_update_the_saved_draft(app, confirm):
+    with TestClient(app) as client:
+        doc, tools = mixed_draft(client)
+        doc = post(client, doc, "transport", mode="walking").json()
+        service, identifier = app.state.agents, UUID(doc["id"])
+        plan = reply(name="route_request", arguments={"kind": "plan", "content": "更改整程", "steps": ["提交"],
+                     "trip": {"destination": "杭州", "days": 2, "transport_mode": "transit"}, "transport_scope": "whole_trip"})
+        service.model = FakeModel([plan, plan], lambda _: reply(name="submit_trip", arguments=submission({"days": doc["data"]["draft"]}, identifiers=True)))
+        if confirm:
+            async def ask():
+                await service.send(identifier, SendMessage(message_id=uuid4(), content="帮我换成公交"))
+                await service.turns[identifier]
+            client.portal.call(ask)
+            interim = read(app, doc)["data"]
+            assert "是否将整程默认交通方式改为公交" in interim["messages"][-1]["content"]
+            assert interim["draftTrip"]["transportMode"] == "walking" and not service.model.executor_calls
+        state = client.portal.call(send_and_finish, service, identifier, "确认" if confirm else "把整程从步行改为公交")
+        assert state["status"] == "completed"
+        saved = read(app, doc)["data"]
+        assert saved["draftTrip"]["transportMode"] == "transit" and saved["days"] == doc["data"]["days"]
+        assert len(tools.calls) == 6
+
+
+@pytest.mark.parametrize("message", ["我想把整趟旅行的默认方式换成步行吧。", "Use walking for the whole trip to Hangzhou.",
+                                    "Change the entire trip from driving to walking to West Lake."])
+def test_whole_trip_chat_changes_only_following_legs(app, message):
     with TestClient(app) as client:
         doc, tools = mixed_draft(client)
         doc = set_mode(client, doc, "e", None)
@@ -299,7 +327,7 @@ def test_whole_trip_chat_changes_only_following_legs(app):
         model = FakeModel([trip_route(days=2, transport_mode="walking")],
                           lambda _: reply(name="submit_trip", arguments=submission({"days": before}, identifiers=True)))
         app.state.agents.model = model
-        state = client.portal.call(send_and_finish, app.state.agents, UUID(doc["id"]), "我想把整趟旅行的默认方式换成步行吧。")
+        state = client.portal.call(send_and_finish, app.state.agents, UUID(doc["id"]), message)
         assert state["status"] == "completed"
         data = read(app, doc)["data"]
         assert data["draftTrip"]["transportMode"] == "walking" and data["days"] == doc["data"]["days"]

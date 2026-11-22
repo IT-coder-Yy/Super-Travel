@@ -328,9 +328,10 @@ def _requested_transport_scope(request, mode):
         local = re.search(r"(?:这(?:一)?段|本段|单段|→|->|(?:从|把|将).+?(?:到|至)).*?(?:改为|改用|改成|换成|设为|指定为)(.+)", clause)
         if local and not re.search(r"不|别|如果|[?？]", clause) and _mentioned_modes(local[1]):
             return "leg"
+        target = re.split(r"(?:改|换|切换|调整)[为成用到]|[改换]乘|设为|\bfrom\b.+?\bto\b", clause)[-1]
         if (re.search(r"整程|全程|整个行程|整趟|所有路段|全部路段|默认|whole trip|entire trip|default", clause)
                 and not re.search(r"不|别|如果|只把|仅把|这段|本段|一段|→|->|[?？]|\b(not|only|if)\b", clause)
-                and _mentioned_modes(clause) == {mode}):
+                and _mentioned_modes(target) == {mode}):
             scope = "whole_trip"
     return scope
 
@@ -458,10 +459,14 @@ class AgentSession:
                 return {"kind": "answer", "content": "请在行程中找到这两个相邻活动，在后一个活动的接驳编辑中指定本段方式。其他路段会沿用各自的设置。"}
             if (route.trip and current.get("destination", "").removesuffix("市") == route.trip.destination.removesuffix("市")
                     and route.trip.transport_mode != (current.get("transportMode") or "walking")):
-                if route.transport_scope is None and not _mentioned_modes(text):
+                label = {"walking": "步行", "driving": "驾车", "transit": "公交"}[route.trip.transport_mode]
+                question = f"请确认是否将整程默认交通方式改为{label}。只改一段时，请打开后一个活动的接驳编辑。"
+                confirmed = (history and history[-1].get("role") == "assistant" and history[-1].get("content") == question
+                             and re.fullmatch(r"(?:确认|确定|是的|同意|好的|yes)[。！!.\s]*", text.strip(), re.I))
+                if route.transport_scope is None and not _mentioned_modes(text) and not confirmed:
                     route.trip.transport_mode = current.get("transportMode") or "walking"
-                elif scope != "whole_trip":
-                    return {"kind": "clarification", "content": "请确认是否要更改整程默认交通方式。只改一段时，请打开后一个活动的接驳编辑。"}
+                elif scope != "whole_trip" and not confirmed:
+                    return {"kind": "clarification", "content": question}
             if route.kind == "progress":
                 state = self.snapshot()
                 return {"kind": "progress", "content": self._progress_text(state), "run_id": state["run_id"]}
