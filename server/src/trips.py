@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
-import json
 import math
 import re
 from typing import Annotated, Literal
@@ -12,6 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from supertravel_server.mcp_client import ToolError
+from supertravel_server.search_tools import search_payload
 from supertravel_server.trip_routes import MODES, RouteSelectionExpired, TripLegError, leg_transport_mode, query_route, route_cache_key, route_contexts, route_fresh, route_matches, unknown_route
 
 
@@ -293,20 +293,6 @@ def to_wgs84(longitude: float, latitude: float, provider: str) -> tuple[float, f
     return round(longitude - dlng, 7), round(latitude - dlat, 7)
 
 
-def _map_payload(result):
-    candidates = [result.get("structuredContent")]
-    for block in result.get("content", []):
-        if isinstance(block, dict) and block.get("type") == "text":
-            try:
-                candidates.append(json.loads(block["text"]))
-            except (ValueError, TypeError, KeyError):
-                continue
-    for candidate in candidates:
-        if isinstance(candidate, dict) and ("results" in candidate or "pois" in candidate):
-            return candidate
-    return {}
-
-
 class TripResearch:
     def __init__(self, tools, destination: str, existing_days: list | None = None, *, map_provider: str | None = None,
                  existing_candidates: list | None = None, default_mode: str = "walking"):
@@ -381,7 +367,7 @@ class TripResearch:
             raise
         if result.get("isError"):
             raise ToolError("tool_result", False, "地图服务未完成地点查询。")
-        payload = _map_payload(result)
+        payload = search_payload(result)
         rows = payload.get("results" if provider == "baidu" else "pois", [])
         found = {}
         for row in rows if isinstance(rows, list) else []:

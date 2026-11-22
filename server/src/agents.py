@@ -16,7 +16,7 @@ from referencing import Registry
 
 from supertravel_server.mcp_client import ToolError
 from supertravel_server.model import ModelClient, ModelError
-from supertravel_server.search_tools import search_result_rows
+from supertravel_server.search_tools import search_payload, search_result_rows
 from supertravel_server.trip_routes import RouteSelectionExpired, check_selected_routes_fresh
 from supertravel_server.trips import ROUTE_TOOL as TRIP_ROUTE_TOOL, SEARCH_TOOL, SUBMIT_TOOL, TripRequest, TripResearch, trip_overview
 
@@ -270,8 +270,8 @@ def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None]
 
 
 def _requested_search_links(request: str) -> bool:
-    terms = r"链接|网址|出处|引用|来源地址|原文地址|\b(?:urls?|links?|citations?)\b"
-    omit = r"(?:不要|不用|无需|不需要|别|省略)(?:再|给我|给|提供|附上|附|列出|显示|任何)*(?:标题[和或及、])?|\b(?:no|without|omit)\s+"
+    terms = r"链接|网址|出处|引用|来源(?:地址)?|原文地址|\b(?:urls?|links?|citations?)\b"
+    omit = r"(?:不要|不用|无需|不需要|不必|请勿|别|省略)(?:再|给我|给出|给|提供|附上|附|列出|显示|注明|标注|说明|任何)*(?:标题[和或及、])?|\b(?:no|without|omit)\s+"
     mentions = re.finditer(rf"(?P<omit>{omit})?(?:原文|来源|网页)?(?:{terms})", request, re.I)
     requested = False
     for mention in mentions:
@@ -285,9 +285,6 @@ def _with_search_links(content, results, request):
     subset = re.search(r"(?:挑选?|选[出取]?|前|推荐|只要|仅要|给我|列出)\s*[一二两三四五六七八九十\d]+\s*[篇条项个]|\b(?:choose|select|only|top|best|first)\b", request, re.I)
     for step in results:
         rows = step.get("search_sources", [])
-        if subset:
-            selected = [row for row in rows if re.search(re.escape(row["url"]) + end_url, step["content"])]
-            rows = selected or rows
         for row in rows:
             sources.setdefault(row["url"], " ".join(row["title"].split()) or "未提供标题")
     if not sources:
@@ -304,6 +301,20 @@ def _with_search_links(content, results, request):
         return f"[{title}]({expected})" if expected and url in sources else match[0]
 
     content = re.sub(r"\[([^\]\n]+)\]\((https://[^\s)]+)\)", bind_link, content)
+    if subset and len(sources) > 1:
+        single = re.search(r"[一1]\s*[篇条项个]|\b(?:one|single|first|best)\b", request, re.I)
+        for evidence in [step["content"] for step in reversed(results)] + [content]:
+            selected = [url for url in sources if re.search(re.escape(url) + end_url, evidence)]
+            if not selected:
+                selected = [url for title, url in by_title.items() if url and f"《{title}》" in evidence]
+            if not selected:
+                selected = [url for title, url in by_title.items() if url and title in evidence]
+            if selected and (not single or len(selected) == 1):
+                sources = {url: sources[url] for url in selected}
+                break
+        else:
+            if single:
+                return content
     missing = []
     for url, title in sources.items():
         # Bind the pair, not just the occurrence of each string elsewhere in the reply.
@@ -690,12 +701,11 @@ class AgentSession:
                     raise StepFailure(f"工具 {name} 返回业务错误，需要检查查询条件。")
                 if not result.get("content") and not result.get("structuredContent"):
                     raise StepFailure(f"工具 {name} 未返回查询内容，需要调整查询条件。")
-                if step_sources is not None and name in ("xhs_search_public", "serper_search"):
-                    payload = result.get("structuredContent")
-                    if isinstance(payload, dict):
-                        rows = search_result_rows(payload.get("results"), url_key="url", xhs=name == "xhs_search_public", count=10)
-                        for row in rows:
-                            step_sources.setdefault(row["url"], row)
+                if step_sources is not None and name in ("xhs_search_public", "serper_search", "tavily_search"):
+                    rows = search_result_rows(search_payload(result).get("results"), url_key="url", xhs=name == "xhs_search_public",
+                                              count=10, snippet_key="content" if name == "tavily_search" else "snippet")
+                    for row in rows:
+                        step_sources.setdefault(row["url"], row)
                 has_tool_result = True
                 encoded = json.dumps(result, ensure_ascii=False)
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": encoded[:12000] + ("\n[工具结果已截断]" if len(encoded) > 12000 else "")})

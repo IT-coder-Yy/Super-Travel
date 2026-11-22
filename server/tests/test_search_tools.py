@@ -11,7 +11,7 @@ import pytest
 
 from supertravel_server.search_tools import SearchTools
 from supertravel_server.mcp_client import ToolError
-from .test_agents import FakeModel, finish, reply, route, session_for
+from .test_agents import FakeModel, FakeTools, finish, reply, route, session_for
 
 
 SECRET = "fake-key/with+reserved=characters"
@@ -68,6 +68,8 @@ def test_public_search_plan_returns_only_indexed_results_without_creating_trip(h
 @pytest.mark.parametrize(("request_text", "include_links"), [
     ("请把标题和链接给我。", True),
     ("列出旅途资料，附上出处。", True),
+    ("请注明来源。", True),
+    ("只要摘要，不用注明来源。", False),
     ("Please list the titles and URLs.", True),
     ("给我标题，不要附上链接。", False),
     ("摘要即可，不需要标题和链接。", False),
@@ -129,6 +131,50 @@ def test_citations_respect_an_executor_selection_and_keep_title_bound_to_its_url
     assert _with_search_links(paired, [step, step], "列出全部链接") == paired
     generic = _with_search_links("分享如下。", [step], "给我标题和链接")
     assert generic.endswith(f"甲 — {a}\n乙 — {b}")
+
+
+def test_one_citation_can_be_identified_by_unique_title_without_a_url():
+    from supertravel_server.agents import _with_search_links
+
+    rows = [{"title": "孤山指南", "url": "https://example.org/a"}, {"title": "西湖路线", "url": "https://example.org/b"}]
+    request = "只选一篇并给出标题和链接"
+    step = {"content": "选中《孤山指南》。", "search_sources": rows}
+    content = _with_search_links("也比较过西湖路线。", [step], request)
+    assert "孤山指南 — https://example.org/a" in content and "https://example.org/b" not in content
+    step["search_sources"] = [dict(row, title="孤山指南") for row in rows]
+    assert _with_search_links("旅行参考。", [step], request) == "旅行参考。"
+    step["content"] = "选中 https://example.org/b"
+    assert _with_search_links("旅行参考。", [step], request).endswith("孤山指南 — https://example.org/b")
+
+
+@pytest.mark.parametrize("text_only", [False, True])
+def test_tavily_search_citations_survive_an_incomplete_summary(text_only):
+    payload = {"results": [
+        {"title": "孤山指南", "url": "https://example.org/gushan", "content": "孤山步行导览"},
+        {"title": "西湖路线", "url": "https://example.org/lake", "content": "西湖北线"},
+    ]}
+
+    async def respond(name, arguments):
+        assert name == "tavily_search"
+        result = {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
+        if not text_only:
+            result["structuredContent"] = payload
+        return result
+
+    def execute(messages):
+        return reply("有两条旅行资料。") if messages[-1]["role"] == "tool" else reply(name="tavily_search", arguments={"query": "杭州"})
+
+    async def run():
+        tools = FakeTools(respond)
+        tools.tools = [{"name": "tavily_search", "inputSchema": {"type": "object"}}]
+        session, _ = session_for(FakeModel([route(steps=["用 Tavily 搜索"])], execute), tools)
+        await session.chat("用 Tavily 查询，并附上标题和链接。")
+        state = await finish(session)
+        assert state["status"] == "completed" and len(tools.calls) == 1
+        for row in payload["results"]:
+            assert f"{row['title']} — {row['url']}" in state["content"]
+        assert state["results"][0]["search_sources"][0]["snippet"] == "孤山步行导览"
+    asyncio.run(run())
 
 
 def test_only_serper_receives_key_and_output_is_sanitized(caplog, monkeypatch):

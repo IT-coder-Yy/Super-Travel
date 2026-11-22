@@ -25,7 +25,21 @@ TOOLS = [
 ]
 
 
-def search_result_rows(rows, *, url_key: str, xhs: bool, count: int) -> list[dict[str, str]]:
+def search_payload(result):
+    candidates = [result.get("structuredContent")]
+    for block in result.get("content", []):
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block["text"]))
+            except (ValueError, TypeError, KeyError):
+                continue
+    for candidate in candidates:
+        if isinstance(candidate, dict) and ("results" in candidate or "pois" in candidate):
+            return candidate
+    return {}
+
+
+def search_result_rows(rows, *, url_key: str, xhs: bool, count: int, snippet_key: str = "snippet") -> list[dict[str, str]]:
     """Validate public result URLs before they enter a tool reply or a conversation."""
     if not isinstance(rows, list):
         return []
@@ -48,7 +62,7 @@ def search_result_rows(rows, *, url_key: str, xhs: bool, count: int) -> list[dic
             continue
         seen.add(url)
         results.append({"title": row.get("title", "")[:500] if isinstance(row.get("title"), str) else "",
-                        "url": url, "snippet": row.get("snippet", "")[:2000] if isinstance(row.get("snippet"), str) else ""})
+                        "url": url, "snippet": row[snippet_key][:2000] if isinstance(row.get(snippet_key), str) else ""})
         if len(results) == count:
             break
     return results
