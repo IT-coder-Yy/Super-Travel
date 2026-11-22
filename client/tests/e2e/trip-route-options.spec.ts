@@ -501,6 +501,85 @@ test('单段保存应答丢失时先重读，已落盘的选择只写一次', as
   expect(writes).toBe(1);
 });
 
+test('混合草稿聊天续改后，导出反映正式版，重启可恢复两天各自的接驳', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await open(page);
+  await compare(page);
+  await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
+  await page.getByRole('button', { name: '保存方案到草稿' }).click();
+  await editor(page).getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const formal = await trip.read();
+  const second = formal.data.days[1].activities[1];
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  await editor(page).getByRole('button', { name: '第 2 天', exact: true }).click();
+  await expect(editor(page).locator('.trip-leg')).toContainText('跟随整程（公共交通）');
+  const trigger = editor(page).getByRole('button', { name: '设置本段方式', exact: true });
+  await trigger.press('Enter');
+  const legForm = page.getByRole('dialog', { name: '本段交通方式', exact: true });
+  const choice = legForm.getByLabel('本段接驳方式');
+  await expect(choice).toBeFocused();
+  const beforePreview = await trip.read();
+  await choice.selectOption('walking');
+  expect(await trip.read()).toEqual(beforePreview);
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  await trigger.press('Enter');
+  await expect(choice).toHaveValue('follow');
+  await choice.selectOption('walking');
+  const write = page.waitForRequest(request => request.url().endsWith('/trip/routes/transport'));
+  await legForm.getByRole('button', { name: '保存方式到草稿' }).press('Enter');
+  expect((await write).postDataJSON()).toEqual({ expected_revision: beforePreview.revision, activity_id: second.id, mode: 'walking' });
+  await expect(trigger).toBeFocused();
+  await expect(editor(page).getByRole('button', { name: '比较公交方案' })).toHaveCount(0);
+  await expect(editor(page).locator('.trip-leg')).toContainText('本段指定步行');
+  await editor(page).getByRole('button', { name: '关闭窗口', exact: true }).click();
+  await expect(page.locator('.activities .trip-leg')).toContainText('本段指定步行');
+  const mixed = await trip.read();
+  expect(mixed.data.days).toEqual(formal.data.days);
+  expect(await trip.calls()).toHaveLength(1);
+  await page.getByLabel('旅行对话输入').fill('固定行程，保持身份，每天末项延后15分钟');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.draft[1].activities[1].time).toBe('11:15');
+  const pending = await trip.read();
+  expect(pending.data.days).toEqual(formal.data.days);
+  expect(pending.data.draft[0].activities[1].incomingRoute).toEqual(formal.data.days[0].activities[1].incomingRoute);
+  expect(pending.data.draft[1].activities[1].incomingTransportOverride).toEqual(mixed.data.draft[1].activities[1].incomingTransportOverride);
+  expect(await trip.calls()).toHaveLength(1);
+
+  const exportButton = page.getByRole('button', { name: '导出行程', exact: true });
+  const preview = page.getByLabel('Markdown 预览', { exact: true });
+  await exportButton.click();
+  await page.getByRole('button', { name: '导出已保存正式版', exact: true }).click();
+  await expect(preview).toContainText('离线方案2号线');
+  await expect(preview).not.toContainText('本段指定步行');
+  await page.keyboard.press('Escape');
+  await expect(exportButton).toBeFocused();
+  await exportButton.click();
+  await page.getByRole('button', { name: '先应用草稿再导出', exact: true }).click();
+  await expect(preview).toContainText('本段指定步行');
+  await expect(preview).toContainText('跟随整程（公共交通）');
+  await expect(preview).toContainText('参考总票价：¥0.00');
+  await expect(preview).toBeFocused();
+  for (const [width, height] of [[960, 640], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await expect(preview).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  const applied = await trip.read();
+  expect(applied.data.days[1].activities[1].incomingRoute).toMatchObject({ mode: 'walking', status: 'verified' });
+  expect(await trip.calls()).toHaveLength(2);
+  await localApp.restart();
+  await page.reload();
+  await expect(page.getByRole('button', { name: '恢复上一版行程', exact: true })).toBeEnabled();
+  expect(await trip.read()).toEqual(applied);
+  await page.getByRole('button', { name: '恢复上一版行程', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.days).toEqual(formal.data.days);
+  const restored = await trip.read();
+  for (const key of ['trip', 'candidates', 'favorites']) expect(restored.data[key]).toEqual(formal.data[key]);
+  expect(await trip.calls()).toHaveLength(0);
+});
+
 test('D3 整程切换、非首方案、时间备注费用、聊天续改、导出重启及恢复闭环', async ({ page, localApp }) => {
   test.setTimeout(90_000);
   const trip = await setup(page, localApp);
