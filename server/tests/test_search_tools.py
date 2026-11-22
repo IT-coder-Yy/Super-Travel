@@ -65,6 +65,72 @@ def test_public_search_plan_returns_only_indexed_results_without_creating_trip(h
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(("request_text", "include_links"), [
+    ("请把标题和链接给我。", True),
+    ("列出旅途资料，附上出处。", True),
+    ("Please list the titles and URLs.", True),
+    ("给我标题，不要附上链接。", False),
+    ("摘要即可，不需要标题和链接。", False),
+    ("只说查到几条。", False),
+])
+def test_chat_preserves_verified_search_pairs_when_summary_omits_them(request_text, include_links):
+    base = "https://www.xiaohongshu.com/explore/"
+    first, second = base + "park", base + "park?day=2"
+    organic = [
+        {"title": "公园步道", "link": first, "snippet": "固定索引摘要"},
+        {"title": "次日步道", "link": second},
+        {"title": "重复结果", "link": first},
+        {"title": "不属于本站", "link": "https://example.com/park"},
+    ]
+    calls = []
+
+    def provider(req):
+        calls.append(json.loads(req.content))
+        return httpx.Response(200, json={"organic": organic})
+
+    def execute(messages):
+        if messages[-1]["role"] != "tool":
+            return reply(name="xhs_search_public", arguments={"query": "旅行步道"})
+        return reply("找到了两条公开结果。")
+
+    def summarize(messages):
+        sources = json.loads(messages[-1]["content"])["completed_steps"][0]["search_sources"]
+        assert [(v["title"], v["url"]) for v in sources] == [("公园步道", first), ("次日步道", second)]
+        assert sources[0]["snippet"] == "固定索引摘要"
+        return reply("有两条结果。" + (f"次日步道 — {second}" if include_links else ""))
+
+    async def run():
+        model = FakeModel([route(steps=["查一次公开索引"])], execute, summarize)
+        session, _ = session_for(model, SearchTools(SECRET, transport=httpx.MockTransport(provider)))
+        await session.chat(request_text)
+        result = await finish(session)
+        assert result["status"] == "completed" and len(calls) == len(model.summary_calls) == 1
+        content = result["content"]
+        if include_links:
+            assert f"公园步道 — {first}" in content and content.count(second) == 1
+        else:
+            assert content == "有两条结果。"
+        assert "example.com" not in content and "重复结果" not in content
+
+    asyncio.run(run())
+
+
+def test_citations_respect_an_executor_selection_and_keep_title_bound_to_its_url():
+    from supertravel_server.agents import _with_search_links
+
+    a, b = "https://www.xiaohongshu.com/explore/a", "https://www.xiaohongshu.com/explore/b"
+    step = {"content": f"选择乙的出处 {b}", "search_sources": [{"title": "甲", "url": a}, {"title": "乙", "url": b}]}
+    one = _with_search_links("选乙。", [step], "选一篇并给链接")
+    assert b in one and a not in one
+    swapped = f"[乙]({a})、[甲]({b})"
+    result = _with_search_links(swapped, [step], "每条都要标题和链接")
+    assert result == f"[乙]({b})、[甲]({a})"
+    paired = f"[甲]({a})、[乙]({b})"
+    assert _with_search_links(paired, [step, step], "列出全部链接") == paired
+    generic = _with_search_links("分享如下。", [step], "给我标题和链接")
+    assert generic.endswith(f"甲 — {a}\n乙 — {b}")
+
+
 def test_only_serper_receives_key_and_output_is_sanitized(caplog, monkeypatch):
     caplog.set_level(logging.DEBUG)
     monkeypatch.setenv("HTTPS_PROXY", "http://invalid-proxy.invalid:1234")
