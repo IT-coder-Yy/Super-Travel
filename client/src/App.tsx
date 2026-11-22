@@ -18,11 +18,11 @@ import { RouteComparison } from './components/RouteComparison'
 import { ConversationReload } from './components/ConversationReload'
 import { CandidatePool } from './components/CandidatePool'
 import { CandidateAction } from './components/CandidateAction'
-import { clearInvalidRoutes, formatCost, knownCosts, routeDetails, transportModes, tripOverview } from './tripDetails'
+import { clearInvalidRoutes, firstRouteConflict, formatCost, knownCosts, transportModes, tripOverview } from './tripDetails'
 import { ModelSettings } from './components/ModelSettings'
 import { TravelPreferences } from './components/TravelPreferences'
 import appIcon from './assets/app-icon.svg'
-import { beginTripDraft, currentCandidates, hasTripDraft, createWorkspace, isWorkspaceData, type Activity, type ActivityMove, type Candidate, type ConversationSummary, type PlaceSelection, type TripExportFormat, type TripRoute } from './types'
+import { beginTripDraft, currentCandidates, hasTripDraft, createWorkspace, isWorkspaceData, type Activity, type ActivityMove, type Candidate, type ConversationSummary, type PlaceSelection, type TripDay, type TripExportFormat, type TripRoute, type WorkspaceData } from './types'
 
 type Panel = 'history' | 'settings' | 'photos' | 'favorites' | 'candidates' | 'edit' | 'new' | 'detail' | 'export' | null
 type PlacePickerState = { candidate?: boolean; conversation: ConversationSummary; day: number; activity?: Activity; initialTime: string }
@@ -88,7 +88,7 @@ export default function App() {
   const hasInvalidTime = Object.keys(timeInputs).length > 0
   const favoriteActivities = [...days.flatMap(item => item.activities), ...candidates].filter(activity => workspace.favorites.includes(activity.id))
   const costSummary = knownCosts(days)
-  const routeConflict = trip ? days.flatMap(item => item.activities.map((activity, index) => routeDetails(item.activities[index - 1], activity, trip.transportMode ?? 'walking')?.conflict)).find(Boolean) : undefined
+  const routeConflict = trip ? firstRouteConflict(days, trip.transportMode ?? 'walking')?.message : undefined
 
   const dragDisabled = !ready || !trip || !day || panel !== 'edit' || placeFlow || needsReload || applying || !!locating || !!recovering || saving || agentWorking || sending || hasInvalidTime
   const activityDrag = useActivityDrag(`${current?.id}:${current?.revision}:${day?.day}`, dragDisabled, (activityId, beforeId, targetDay) => {
@@ -119,9 +119,7 @@ export default function App() {
   useEffect(() => {
     if (!ready || loading || !dirty || applying || locating || recovering || agentWorking || sending || placeFlow || needsReload || activityDrag.drag || panel === 'export') return
     const timer = window.setTimeout(() => {
-      if (!placeFlowRef.current) void persist(workspace).catch(error => {
-        if (panel !== 'edit' || !showRevisionConflict(error)) notify(describeError(error), true)
-      })
+      if (!placeFlowRef.current) autosave(workspace)
     }, 900)
     return () => window.clearTimeout(timer)
   }, [workspace, ready, loading, dirty, applying, locating, recovering, agentWorking, sending, placeFlow, needsReload, panel, activityDrag.drag])
@@ -176,13 +174,25 @@ export default function App() {
     setPlaceError('')
     setPanel('edit')
   }
+  function autosave(data: WorkspaceData) {
+    void persist(data).catch(error => {
+      if (panel !== 'edit' || !showRevisionConflict(error)) notify(describeError(error), true)
+    })
+  }
+  function changeEditedDays(draft: TripDay[]) {
+    const data = dataRef.current
+    const lostChoice = clearInvalidRoutes(draft, data.draft ?? data.days)
+    const next = { ...beginTripDraft(data), draft }
+    change(next)
+    // Record a broken choice before rapid edits can reconnect the same two stops.
+    if (lostChoice && ready && !needsReload) autosave(next)
+  }
   function editActivity(id: string, patch: Partial<Activity>) {
     if (placeFlowRef.current) return
     setPlaceError('')
     const draft = structuredClone(dataRef.current.draft ?? dataRef.current.days)
     for (const tripDay of draft) tripDay.activities = tripDay.activities.map(activity => activity.id === id ? { ...activity, ...patch, ...(patch.title !== undefined && patch.title !== activity.title ? { place: undefined, cost: undefined } : {}) } : activity)
-    clearInvalidRoutes(draft, dataRef.current.draft ?? dataRef.current.days)
-    change({ ...beginTripDraft(dataRef.current), draft })
+    changeEditedDays(draft)
   }
   function editActivityTime(activity: Activity, value: string) {
     if (placeFlowRef.current) return
@@ -202,8 +212,7 @@ export default function App() {
     if (index + delta < 0 || index + delta >= targetDay.activities.length) return
     const item = targetDay.activities.splice(index, 1)[0]!
     targetDay.activities.splice(index + delta, 0, item)
-    clearInvalidRoutes(draft, dataRef.current.draft ?? dataRef.current.days)
-    change({ ...beginTripDraft(dataRef.current), draft })
+    changeEditedDays(draft)
   }
   async function openPlacePicker(activity?: Activity) {
     if (!ready || !day || !trip || applying || locating || agentWorking || sending || placeFlowRef.current || hasInvalidTime) return
