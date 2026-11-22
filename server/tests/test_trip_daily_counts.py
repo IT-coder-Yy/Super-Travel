@@ -33,6 +33,8 @@ def planned_stops(counts):
     ("杭州两天，每天三站。", [3, 1], [3, 4], 3, "每天必须恰好安排 3"),
     ("杭州两天，每天三站。第一天早点出发。", [3, None], [3, 1], 3, "每天必须恰好安排 3"),
     ("杭州两天，第二天只安排一个景点。", 1, [2, 1], [None, 1], None),
+    ("杭州两天，第二天只安排一个景点。", [1, 1], [2, 1], [None, 1], None),
+    ("杭州两天，第二天只安排一个景点。", [1, 1], [2, 2], [None, 1], "第 2 天必须恰好安排 1"),
 ])
 def test_first_plan_checks_counts_before_saving(app, request_text, proposed, submitted, accepted, error):
     async def run():
@@ -104,11 +106,18 @@ def test_complex_day_wording_corrects_scalar_before_any_lookup():
 @pytest.mark.parametrize(("text", "proposed", "expected"), [
     ("杭州两天，第一天最多三个景点，第二天不一定去一个。", None, None),
     ("杭州两天，全程三个景点。", None, None),
+    ("杭州两天，首日早点出发，第二天一站。", [1, 1], [None, 1]),
+    ("杭州两天，首日早点出发，第二天一站。", 1, [None, 1]),
+    ("杭州两天，第一天最多安排三个景点，第二天一站。", [3, 1], [None, 1]),
+    ("杭州两天，第一天安排一个小时休息，第二天一站。", [1, 1], [None, 1]),
+    ("杭州两天，首日只参观三座艺术馆，第二天一站。", [3, 3], [3, 1]),
+    ("杭州三天，次日只去一座古塔。", [1, 1, 1], [None, 1, None]),
     ("杭州两天，第一天三站，第二天一站。", [3, 3], [3, 1]),
 ])
 def test_only_exact_day_counts_are_bound(text, proposed, expected):
     async def run():
-        session, _ = session_for(FakeModel([trip_route(days=2, stops_per_day=proposed)]))
+        days = len(proposed) if isinstance(proposed, list) else 2
+        session, _ = session_for(FakeModel([trip_route(days=days, stops_per_day=proposed)]))
         try:
             result = await session._route(text, [])
             assert result.trip.stops_per_day == expected

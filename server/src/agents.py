@@ -231,11 +231,17 @@ _COUNT_DIGITS = str.maketrans("一二两三四五六七八", "122345678")
 def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None] | None:
     declared: dict[int | None, int] = {}
     other_day_clause = False
+    other_count_days: set[int] = set()
     for clause in re.split(r"[，,。；;、！!\n]", text.translate(_COUNT_DIGITS)):
         match = _COUNT_CLAUSE.match(clause)
         if match is None:
-            if re.search(r"第\s*\d+\s*[天日]|首日|次日|最后1?天", clause):
+            mention = re.search(r"第\s*(\d+)\s*[天日]|首日|次日|最后1?天", clause)
+            if mention:
                 other_day_clause = True
+                rest = clause[mention.end():]
+                if (re.search(r"(?:选(?:择)?|去|看|游览|参观|安排|打卡)\s*[1-8]\s*(?:座|家|处|站|个(?!半?(?:小时|钟头)))", rest)
+                        and not re.search(r"至少|至多|最少|最多|上限|不限|不一定|不超过|例如|比如|左右", rest)):
+                    other_count_days.add(int(mention[1]) if mention[1] else {"首日": 1, "次日": 2}.get(mention[0], trip.days))
             continue
         day = int(match[1]) if match[1] else None
         count = int(match[2])
@@ -249,11 +255,15 @@ def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None]
         if any(count != uniform for count in declared.values()):
             raise ValueError("每天统一数量与个别日期要求冲突，请核对原文并澄清。")
         return uniform
-    if other_day_clause and isinstance(proposed, int) and len(declared) < trip.days:
+    if isinstance(proposed, int) and len(declared) < trip.days and (other_count_days or (other_day_clause and not declared)):
         raise ValueError("多日要求中含有单独日期说明，请用逐日数组确认适用范围，未指定的天填 null。")
-    if not declared:
+    if not declared and not (other_count_days and isinstance(proposed, list)):
         return proposed
-    counts = proposed.copy() if isinstance(proposed, list) else [None] * trip.days
+    counts = [None] * trip.days
+    if isinstance(proposed, list):
+        for day in other_count_days:
+            if 1 <= day <= trip.days:
+                counts[day - 1] = proposed[day - 1]
     for day, count in declared.items():
         counts[day - 1] = count
     return counts
