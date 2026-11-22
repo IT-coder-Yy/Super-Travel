@@ -53,7 +53,7 @@ class Route(BaseModel):
     replace_active: bool = False
     trip: TripRequest | None = Field(default=None, description="仅 kind=plan 且即将执行具体行程生成或修改时填写；answer、clarification、progress 必须为 null，即使已知目的地和天数。")
     transport_scope: Literal["leg", "whole_trip"] | None = Field(default=None, description="本次明确要求改变某一段或整程交通时填写；仅调整时间等其他请求留空。")
-    stops_per_day_evidence: str | None = Field(default=None, min_length=1, max_length=1000, description="已有行程续改中指定每天地点数时，逐字引用本次 request 中的数量要求；不能只引用历史。未指定则为 null。")
+    stops_per_day_evidence: str | None = Field(default=None, min_length=1, max_length=1000, description="已有行程续改中指定统一或逐日的地点数时，逐字引用本次 request 中的数量要求；不能只引用历史。未指定则为 null。")
     preference_summary: str | None = Field(default=None, max_length=1000)
     preference_application: PreferenceApplication | None = Field(default=None, description="收到 travel_preferences 且 kind=plan 时必填四个字段的实际采用声明；服务端校验并生成摘要。")
 
@@ -84,7 +84,7 @@ PLANNER_PROMPT = """你是旅行规划 Agent。必须调用 route_request 返回
 除任务修改外 replace_active 必须为 false。国内旅行首版只支持单目的地、1～7天。
 信息足够、准备立即生成或修改具体行程时才用 plan，并填写 trip={destination:单个国内城市,days:1～7}，最后一步明确提交结构化行程。仍需补充必要信息时先用 clarification，本轮不生成行程。
 answer、clarification、progress 必须填写 trip=null、steps=[]；即使已经知道目的地和天数，也只能在 content 中复述，不能把已知信息填入 trip。
-必须提取用户的明确限制：指定每天地点数量时填写 trip.stops_per_day；例如“杭州1天，3个不同景点”须为3，不能擅自增加午餐地点。
+trip.stops_per_day 只表达用户明确要求的准确站数。单日三个景点或明确“每天三站”填 3；“第一天三站、第二天一站”填 [3,1]；两天只指定第二天一站填 [null,1]。不把总数、上限、举例或某一天的数量推广到其他天。数量未指定填 null，不擅自增加餐饮。
 已有行程续改以本次 request 和 current_trip 的最新快照为准；手动跨日移动、增删后的安排覆盖历史生成时的每天数量，不能为了旧数量补删活动。本次未重新要求每天数量时，trip.stops_per_day=null，steps 也不能沿用旧数量；本次明确要求数量时须填写 stops_per_day_evidence，逐字引用本次 request 中的依据。无法确定本次要求时澄清，不从历史或已结束任务恢复数量限制。
 当前活动以 current_trip.days[].activities 为唯一依据，旧标题、副标题、摘要和历史消息可能未随手动编辑更新，不能据此补回活动。仅调整已有活动时间且资料足够时，用一个步骤核对时间并提交草稿即可，不必拆成整理、修改、提交多个步骤。
 用户明确只用百度或高德时填写 trip.map_provider=baidu或amap；若未限定则为null，不可把“只用百度”理解为优先百度。
@@ -116,7 +116,7 @@ EXECUTOR_PROMPT = """你是旅行执行 Agent，只完成规划 Agent 指定的�
 current_candidates 是未排期候选，不属于 available_places。只有用户明确要求安排某候选时，才可在 submit_trip 使用其 id 作为 activity_id，并使用其原 place.id；不得凭相同 place_id 自动选中候选。候选只可引用一次，destination 必须与 trip_request.destination 同城。默认保留候选备注和时长，只有用户明确修改时才分别设置 replace_description=true 或 replace_duration=true。其可信地点可直接用于 query_trip_route，无需再次检索，不编造坐标或费用。
 每个步骤聚焦计划指定的日期或分组，已有足够地点后停止扩展查询，完成本步就简短汇报；不要在单步重复调查整个多日行程。
 每次查询优先百度，查询词明确、目的地已由服务端固定。一次查询可返回多个候选，无需逐个重复查询。
-trip_request.map_provider 非空时仅使用其指定地图，额度不足也不能换服务。stops_per_day 非空时每天必须恰好该数量，不额外添加餐饮点。
+trip_request.map_provider 非空时仅使用其指定地图，额度不足也不能换服务。stops_per_day 是整数时所有日期均须恰好该数量；是数组时逐日遵守对应值，null 表示该日没有指定数量。不能用额外餐饮凑数。
 确定顺序后，先检查 current_trip 中对应日期和相邻活动 ID。未变的路段沿用 incomingTransportOverride.mode 或整程默认，复用当前有效记录（包括用户选用公交）。有需要才查 query_trip_route，传 day、两端 place_id 及可用的 from_activity_id、to_activity_id；新接驳使用 trip_request.transport_mode。不可为每段试查所有方式、替换手选方案、传坐标，或在 submit_trip 中提交方式、路线、选用标记。
 current_trip 中 incomingRoute.selection=user 是用户选用的公交方案：日期、相邻活动 ID、完整地点和交通方式不变且新鲜时原样保留，无需重新查询，不用默认首方案替换。同一对地点在不同天的选择各自独立；只改时间或备注不改变选择。用户选用方案过期时请反馈需要在编辑中重新比较并选择，不能自动选回首方案。
 路线status=unknown代表未核实，须在行程中保留未知项，不编造耗时或反复请求同一失败路线。已知耗时要留足接驳时间；不足时修订时间或用report_plan_issue反馈冲突。
@@ -217,6 +217,45 @@ def _place_options(places) -> list[dict]:
     return [{key: place[key] for key in ("id", "name", "address", "provider")} for place in places]
 
 
+# Only stand-alone exact count declarations can correct a mistaken multi-day scalar locally.
+_COUNT_CLAUSE = re.compile(
+    r"\s*(?:第\s*([1-7])\s*[天日]|每1?[天日])\s*(?:严格|恰好|正好|仅|只)?\s*(?:安排|游览|去)?\s*"
+    r"([1-8])\s*(?:个|处)?\s*(?:不同的?)?(?:地点|景点|活动|站)\s*(?=[:：]|$)"
+)
+_COUNT_DIGITS = str.maketrans("一二两三四五六七八", "122345678")
+
+
+def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None] | None:
+    declared: dict[int | None, int] = {}
+    other_day_clause = False
+    for clause in re.split(r"[，,。；;、！!\n]", text.translate(_COUNT_DIGITS)):
+        match = _COUNT_CLAUSE.match(clause)
+        if match is None:
+            if re.search(r"第\s*\d+\s*[天日]|首日|次日|最后1?天", clause):
+                other_day_clause = True
+            continue
+        day = int(match[1]) if match[1] else None
+        count = int(match[2])
+        if (day is not None and day > trip.days) or (day in declared and declared[day] != count):
+            raise ValueError("指定日期或地点数量与本次行程冲突，请核对原文，仍有冲突时请澄清。")
+        declared[day] = count
+
+    proposed = trip.stops_per_day
+    uniform = declared.pop(None, None)
+    if uniform is not None:
+        if any(count != uniform for count in declared.values()):
+            raise ValueError("每天统一数量与个别日期要求冲突，请核对原文并澄清。")
+        return uniform
+    if other_day_clause and isinstance(proposed, int) and len(declared) < trip.days:
+        raise ValueError("多日要求中含有单独日期说明，请用逐日数组确认适用范围，未指定的天填 null。")
+    if not declared:
+        return proposed
+    counts = proposed.copy() if isinstance(proposed, list) else [None] * trip.days
+    for day, count in declared.items():
+        counts[day - 1] = count
+    return counts
+
+
 def _mentioned_modes(text):
     names = {"walking": ("步行", "走路", "徒步", "walk"), "driving": ("驾车", "自驾", "开车", "driv"),
              "transit": ("公交", "公共交通", "地铁", "transit", "public transport")}
@@ -310,6 +349,8 @@ class AgentSession:
                 raise ValueError("plan 必须有非空步骤，每步不超过1000字")
             if route.trip is not None and route.kind != "plan":
                 raise ValueError("非 plan 决策的 trip 必须为 null")
+            if route.trip and route.trip.days > 1 and not failure and not (trip_context or {}).get("trip"):
+                route.trip.stops_per_day = _initial_stop_counts(text, route.trip)
         except ValidationError as error:
             errors = error.errors(include_input=False, include_context=False)
             if travel_preferences is not None and all(item["loc"] and item["loc"][0] == "preference_application" for item in errors):
