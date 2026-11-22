@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { isWorkspaceData, type Conversation } from '../../src/types';
 import { clearInvalidRoutes } from '../../src/tripDetails';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
+import { setLegMode } from '../fixtures/leg-mode';
 
 test.use({ reducedMotion: 'reduce' });
 test.beforeEach(async ({ page }) => {
@@ -319,7 +320,12 @@ test('较慢方案先保存草稿，修正时间后应用且不重查选用方�
   await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
   await page.getByRole('button', { name: '保存方案到草稿' }).click();
   await expect(editor(page)).toBeVisible();
+  await editor(page).getByRole('button', { name: '第 2 天', exact: true }).click();
   await expect(page.getByRole('button', { name: '应用修改', exact: true })).toBeDisabled();
+  await editor(page).getByRole('button', { name: '查看冲突路段' }).press('Enter');
+  const row = editor(page).locator('.editor-activity').nth(1);
+  await expect(row.getByRole('alert')).toBeFocused();
+  await expect(row).toHaveAttribute('data-activity-id', trip.original.data.days[0].activities[1].id);
   await page.getByLabel('时间', { exact: true }).nth(1).fill('11:30');
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -375,8 +381,124 @@ test('更名后未定位的接驳不允许比较', async ({ page, localApp }) =>
   await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
   await page.getByLabel('地点', { exact: true }).nth(1).fill('尚未定位的新地点');
   await expect(editor(page).getByRole('button', { name: '比较公交方案' })).toBeDisabled();
+  await expect(editor(page).getByRole('button', { name: '设置本段方式' })).toBeDisabled();
+  await expect(editor(page).locator('.editor-activity').first().getByRole('button', { name: '设置本段方式' })).toHaveCount(0);
   await expect(editor(page)).toContainText('地点名称已改，请重新定位。');
   expect(await trip.calls()).toHaveLength(0);
+});
+
+test('整程改驾车后，固定公交仍可选第二方案，撤销单段恢复跟随', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  const edit = editor(page);
+  const row = edit.locator('.editor-activity').nth(1);
+  await setLegMode(page, row, 'transit');
+  await expect(row.locator('.trip-leg')).toContainText('本段指定公共交通');
+  const original = trip.original.data.days[0].activities[1].incomingRoute;
+  expect((await trip.read()).data.draft[0].activities[1].incomingRoute).toEqual(original);
+  await edit.getByRole('button', { name: '切换交通方式' }).click();
+  const whole = page.getByRole('dialog', { name: '整程交通方式' });
+  await whole.getByLabel('整程接驳方式').selectOption('driving');
+  await expect(whole).toContainText('影响 1 段接驳');
+  await whole.getByText('保留 1 段已指定的方式').click();
+  await expect(whole.getByRole('listitem').filter({ hasText: '第 1 天' })).toContainText('公共交通');
+  await expect(whole.getByRole('listitem').filter({ hasText: '第 2 天' })).toContainText('固定测试');
+  await whole.getByRole('button', { name: '保存方式到草稿' }).click();
+  await expect(edit).toContainText('整程交通方式：驾车');
+  expect((await trip.read()).data.draft[0].activities[1].incomingRoute).toEqual(original);
+  expect(await trip.calls()).toHaveLength(0);
+  await row.getByRole('button', { name: '比较公交方案' }).click();
+  await compare(page);
+  await comparison(page).getByRole('radio', { name: /方案 2/ }).check();
+  await comparison(page).getByRole('button', { name: '保存方案到草稿' }).click();
+  await expect(row.locator('.trip-leg')).toContainText('参考总票价 ¥0.00');
+  const pinned = await trip.read();
+  expect(pinned.data.draft[0].activities[1].incomingRoute).toMatchObject({ selection: 'user', durationMinutes: 20 });
+  await row.getByRole('button', { name: '设置本段方式' }).press('Enter');
+  const form = page.getByRole('dialog', { name: '本段交通方式', exact: true });
+  const choice = form.getByLabel('本段接驳方式');
+  await choice.selectOption('follow');
+  await expect(form.getByRole('listitem')).toContainText('会清除已选公交方案');
+  for (const [width, height] of [[390, 844], [960, 640], [1440, 960]]) {
+    await page.setViewportSize({ width, height });
+    await expect(choice).toBeInViewport();
+    await expect(form.getByRole('button', { name: '保存方式到草稿' })).toBeInViewport();
+    expect(await form.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+  await page.keyboard.press('Escape');
+  await expect(row.getByRole('button', { name: '设置本段方式' })).toBeFocused();
+  expect(await trip.read()).toEqual(pinned);
+  const clearing = page.waitForRequest(request => request.url().endsWith('/trip/routes/transport'));
+  await setLegMode(page, row, 'follow');
+  expect((await clearing).postDataJSON()).toEqual({ expected_revision: pinned.revision, activity_id: pinned.data.draft[0].activities[1].id, mode: null });
+  await expect(row.locator('.trip-leg')).toContainText('跟随整程（驾车）');
+  await expect(row.getByRole('button', { name: '比较公交方案' })).toHaveCount(0);
+  const cleared = await trip.read();
+  expect(cleared.data.draft[0].activities[1]).not.toHaveProperty('incomingTransportOverride');
+  expect(cleared.data.draft[0].activities[1]).not.toHaveProperty('incomingRoute');
+  expect(cleared.data.days).toEqual(trip.original.data.days);
+  expect(await trip.calls()).toHaveLength(1);
+});
+
+test('单段保存失败或另一窗口撤销草稿时，保留选择直到确认重读', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  await editor(page).getByRole('button', { name: '设置本段方式' }).press('Enter');
+  const form = page.getByRole('dialog', { name: '本段交通方式', exact: true });
+  const choice = form.getByLabel('本段接驳方式');
+  await choice.selectOption('walking');
+  const before = await trip.read();
+  await page.route('**/trip/routes/transport', route => route.fulfill({ status: 503, json: { detail: { message: '夹具写入失败' } } }), { times: 1 });
+  await form.getByRole('button', { name: '保存方式到草稿' }).click();
+  await expect(form.getByRole('alert')).toContainText('写入失败');
+  await expect(choice).toHaveValue('walking');
+  expect(await trip.read()).toEqual(before);
+  const discarded = await localApp.request('/conversations/' + before.id + '/trip/discard', 'POST', { expected_revision: before.revision });
+  await form.getByRole('button', { name: '保存方式到草稿' }).click();
+  const reload = form.getByRole('button', { name: '重新读取会话', exact: true });
+  await expect(reload).toBeFocused();
+  await expect(choice).toBeDisabled();
+  await reload.press('Enter');
+  await form.getByRole('button', { name: '保留本地输入' }).press('Enter');
+  await expect(choice).toHaveValue('walking');
+  expect(await trip.read()).toEqual(discarded);
+  await page.route('**/api/conversations/' + before.id, route => route.fulfill({ status: 503, json: { detail: { message: '夹具读取失败' } } }), { times: 1 });
+  await reload.click();
+  await form.getByRole('button', { name: '确认重新读取会话' }).click();
+  await expect(form.getByRole('alert')).toContainText('读取失败');
+  await expect(choice).toHaveValue('walking');
+  await reload.click();
+  await form.getByRole('button', { name: '确认重新读取会话' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '编辑当天行程', exact: true })).toBeEnabled();
+  expect(await trip.read()).toEqual(discarded);
+  expect(await trip.calls()).toHaveLength(0);
+});
+
+test('单段保存应答丢失时先重读，已落盘的选择只写一次', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  await editor(page).getByRole('button', { name: '设置本段方式' }).click();
+  const form = page.getByRole('dialog', { name: '本段交通方式', exact: true });
+  await form.getByLabel('本段接驳方式').selectOption('walking');
+  const before = await trip.read();
+  let writes = 0;
+  await page.route('**/trip/routes/transport', async route => {
+    writes++;
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await form.getByRole('button', { name: '保存方式到草稿' }).click();
+  await expect(form.getByRole('alert')).toContainText('保存结果尚未确认');
+  await expect(form.getByRole('button', { name: '保存方式到草稿' })).toHaveCount(0);
+  await form.getByRole('button', { name: '重新读取会话', exact: true }).click();
+  await form.getByRole('button', { name: '确认重新读取会话' }).click();
+  await expect(editor(page).locator('.trip-leg')).toContainText('本段指定步行');
+  const saved = await trip.read();
+  expect(saved.revision).toBe(before.revision + 1);
+  expect(saved.data.days).toEqual(before.data.days);
+  expect(await trip.calls()).toHaveLength(0);
+  expect(writes).toBe(1);
 });
 
 test('D3 整程切换、非首方案、时间备注费用、聊天续改、导出重启及恢复闭环', async ({ page, localApp }) => {
