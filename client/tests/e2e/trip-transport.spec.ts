@@ -186,8 +186,12 @@ test('硬时间冲突保留草稿，用户调整后应用；有效零票价不�
   await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
   await expect(editor(page)).toBeVisible();
+  await editor(page).getByRole('button', { name: '第 2 天', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.selectedDay).toBe(2);
   const pending = await trip.read();
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(editor(page).locator('.editor-activity').nth(1).getByRole('alert')).toContainText('第 1 天');
+  await expect(editor(page).locator('.editor-activity').nth(1)).toHaveAttribute('data-activity-id', pending.data.draft[0].activities[1].id);
   await expect(editor(page).getByRole('alert')).toContainText('75 分钟');
   await expect(editor(page).getByRole('alert')).toBeInViewport();
   await expect(editor(page).getByRole('alert')).toBeFocused();
