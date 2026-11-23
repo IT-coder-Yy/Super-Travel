@@ -133,6 +133,27 @@ def test_citations_respect_an_executor_selection_and_keep_title_bound_to_its_url
     assert generic.endswith(f"甲 — {a}\n乙 — {b}")
 
 
+@pytest.mark.parametrize("second_evidence", ["选中 https://example.org/baidi", "选中《白堤攻略》。"])
+def test_citations_collect_each_steps_pick_and_keep_one_when_only_one_is_requested(second_evidence):
+    from supertravel_server.agents import _with_search_links
+
+    gushan = {"title": "孤山攻略", "url": "https://example.org/gushan"}
+    baidi = {"title": "白堤攻略", "url": "https://example.org/baidi"}
+    other = {"title": "备选攻略", "url": "https://example.org/other"}
+    steps = [{"content": "选中 https://example.org/gushan", "search_sources": [gushan, other]},
+             {"content": second_evidence, "search_sources": [baidi, other]}]
+    summary = "两处都值得游览，也比较过备选攻略。"
+    prefix = summary + "\n\n公开搜索来源\n"
+    both = "孤山攻略 — https://example.org/gushan\n白堤攻略 — https://example.org/baidi"
+    assert _with_search_links(summary, steps, "选两篇攻略，孤山和白堤各一篇，附上链接。") == prefix + both
+    assert _with_search_links(summary, steps, "孤山和白堤各选一篇，附上链接。") == prefix + both
+    preliminary = {"content": "初选《备选攻略》。", "search_sources": [other]}
+    assert _with_search_links(summary, [preliminary, *steps], "选两篇攻略，附上链接。") == prefix + both
+    unranked = {"content": "找到相关资料。", "search_sources": [gushan, baidi, other]}
+    assert _with_search_links("已整理。", [unranked], "列出两篇攻略的标题和链接").endswith(both)
+    assert _with_search_links(summary, steps, "只选一篇攻略，附上链接。") == prefix + "白堤攻略 — https://example.org/baidi"
+
+
 def test_one_citation_can_be_identified_by_unique_title_without_a_url():
     from supertravel_server.agents import _with_search_links
 

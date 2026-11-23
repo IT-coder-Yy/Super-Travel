@@ -228,7 +228,7 @@ _COUNT_CLAUSE = re.compile(
 _COUNT_UNCERTAIN = re.compile(r"至少|至多|最少|最多|上限|不限|不一定|不超过|例如|比如|左右")
 _RETURN_ONLY = re.compile(r"(?:就|再)?\s*(?:直接)?\s*(?:(?:乘坐?|搭乘?|坐)\s*(?:高铁|动车|火车|飞机|大巴|车|船)\s*)?"
                           r"(?:返程|回程|回家)\s*")
-_COUNT_DIGITS = str.maketrans("一二两三四五六七八", "122345678")
+_COUNT_DIGITS = str.maketrans("一二两三四五六七八九", "1223456789")
 
 
 def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None] | None:
@@ -293,7 +293,9 @@ def _requested_search_links(request: str) -> bool:
 def _with_search_links(content, results, request):
     sources = {}
     end_url = r"(?=$|[\s)\]〉>）】。，、；|])"
-    subset = re.search(r"(?:挑选?|选[出取]?|前|推荐|只要|仅要|给我|列出)\s*[一二两三四五六七八九十\d]+\s*[篇条项个]|\b(?:choose|select|only|top|best|first)\b", request, re.I)
+    subset = re.search(r"(?P<each>各|分别)?(?:挑选?|选[出取]?|前|推荐|只要|仅要|给我|列出)\s*(?P<count>\d+|[1-9]?十[1-9]?)\s*[篇条项个]"
+                       r"|\b(?:choose|select|only|top|best|first)\b(?:\s+(?P<english>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b)?",
+                       request.translate(_COUNT_DIGITS), re.I)
     for step in results:
         rows = step.get("search_sources", [])
         for row in rows:
@@ -313,19 +315,37 @@ def _with_search_links(content, results, request):
 
     content = re.sub(r"\[([^\]\n]+)\]\((https://[^\s)]+)\)", bind_link, content)
     if subset and len(sources) > 1:
-        single = re.search(r"[一1]\s*[篇条项个]|\b(?:one|single|first|best)\b", request, re.I)
-        for evidence in [step["content"] for step in reversed(results)] + [content]:
-            selected = [url for url in sources if re.search(re.escape(url) + end_url, evidence)]
-            if not selected:
-                selected = [url for title, url in by_title.items() if url and f"《{title}》" in evidence]
-            if not selected:
-                selected = [url for title, url in by_title.items() if url and title in evidence]
-            if selected and (not single or len(selected) == 1):
-                sources = {url: sources[url] for url in selected}
+        quantity = (subset["count"] or subset["english"] or "").lower()
+        limit = None
+        if not subset["each"]:
+            if "十" in quantity:
+                tens, units = quantity.split("十")
+                limit = int(tens or 1) * 10 + int(units or 0)
+            elif quantity.isdecimal():
+                limit = int(quantity)
+            elif quantity:
+                limit = "one two three four five six seven eight nine ten".split().index(quantity) + 1
+            elif re.search(r"\b(?:one|single|first|best)\b", request, re.I):
+                limit = 1
+
+        def matches_in(evidence):
+            return ([url for url in sources if re.search(re.escape(url) + end_url, evidence)]
+                    or [url for title, url in by_title.items() if url and f"《{title}》" in evidence]
+                    or [url for title, url in by_title.items() if url and title in evidence])
+
+        chosen = set()
+        for step in reversed(results):
+            combined = chosen.union(matches_in(step["content"]))
+            if limit is None or len(combined) <= limit:
+                chosen = combined
+            if len(chosen) == limit:
                 break
-        else:
-            if single:
+        if not chosen:
+            matches = matches_in(content)
+            if limit == 1 and len(matches) != 1:
                 return content
+            chosen.update((matches or list(sources))[:limit])
+        sources = {url: title for url, title in sources.items() if url in chosen}
     missing = []
     for url, title in sources.items():
         # Bind the pair, not just the occurrence of each string elsewhere in the reply.
