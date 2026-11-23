@@ -282,7 +282,7 @@ def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None]
 
 def _requested_search_links(request: str) -> bool:
     terms = r"链接|网址|出处|引用|来源(?:地址)?|原文地址|\b(?:urls?|links?|citations?)\b"
-    omit = r"(?:不要|不用|无需|不需要|不必|请勿|别|省略)(?:再|给我|给出|给|提供|附上|附|列出|显示|注明|标注|说明|任何)*(?:标题[和或及、])?|\b(?:no|without|omit)\s+"
+    omit = r"(?:不要|不用|无需|不需要|不必|请勿|(?<!分)别|省略)(?:再|分别|给我|给出|给|提供|附上|附|列出|显示|注明|标注|说明|任何)*(?:标题[和或及、])?|\b(?:no|without|omit)\s+"
     mentions = re.finditer(rf"(?P<omit>{omit})?(?:原文|来源|网页)?(?:{terms})", request, re.I)
     requested = False
     for mention in mentions:

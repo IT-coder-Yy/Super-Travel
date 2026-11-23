@@ -67,6 +67,9 @@ def test_public_search_plan_returns_only_indexed_results_without_creating_trip(h
 
 @pytest.mark.parametrize(("request_text", "include_links"), [
     ("请把标题和链接给我。", True),
+    ("分别附上标题和链接。", True),
+    ("别附上标题和链接。", False),
+    ("不用分别附上标题和链接。", False),
     ("列出旅途资料，附上出处。", True),
     ("请注明来源。", True),
     ("只要摘要，不用注明来源。", False),
