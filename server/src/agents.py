@@ -220,16 +220,20 @@ def _place_options(places) -> list[dict]:
     return [{key: place[key] for key in ("id", "name", "address", "provider")} for place in places]
 
 
-# Only stand-alone exact count declarations can correct a mistaken multi-day scalar locally.
 _COUNT_CLAUSE = re.compile(
-    r"\s*(?:第\s*([1-7])\s*[天日]|每1?[天日])\s*(?:严格|恰好|正好|仅|只)?\s*(?:安排|游览|去)?\s*"
-    r"([1-8])\s*(?:个|处)?\s*(?:不同的?)?(?:地点|景点|活动|站)\s*(?=[:：]|$)"
+    r"\s*(?:第\s*(?P<day>[1-7])\s*[天日]|(?P<alias>首日|次日|最后1?天)|每1?[天日])\s*"
+    r"(?:严格|恰好|正好|仅|只)?\s*(?:安排|游览|去)?\s*(?P<count>[1-8])\s*(?:个|处)?\s*(?:不同的?)?(?:地点|景点|活动|站)\s*"
+    r"(?:(?:[之以]?后|然后|随后|就|再)\s*(?P<after>[^:：]*))?(?=[:：]|$)"
 )
+_COUNT_UNCERTAIN = re.compile(r"至少|至多|最少|最多|上限|不限|不一定|不超过|例如|比如|左右")
+_RETURN_ONLY = re.compile(r"(?:就|再)?\s*(?:直接)?\s*(?:(?:乘坐?|搭乘?|坐)\s*(?:高铁|动车|火车|飞机|大巴|车|船)\s*)?"
+                          r"(?:返程|回程|回家)\s*")
 _COUNT_DIGITS = str.maketrans("一二两三四五六七八", "122345678")
 
 
 def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None] | None:
     declared: dict[int | None, int] = {}
+    aliases = {"首日": 1, "次日": 2, "最后天": trip.days, "最后1天": trip.days}
     other_day_clause = False
     other_count_days: set[int] = set()
     for clause in re.split(r"[，,。；;、！!\n]", text.translate(_COUNT_DIGITS)):
@@ -240,11 +244,18 @@ def _initial_stop_counts(text: str, trip: TripRequest) -> int | list[int | None]
                 other_day_clause = True
                 rest = clause[mention.end():]
                 if (re.search(r"(?:选(?:择)?|去|看|游览|参观|安排|打卡)\s*[1-8]\s*(?:座|家|处|站|个(?!半?(?:小时|钟头)))", rest)
-                        and not re.search(r"至少|至多|最少|最多|上限|不限|不一定|不超过|例如|比如|左右", rest)):
-                    other_count_days.add(int(mention[1]) if mention[1] else {"首日": 1, "次日": 2}.get(mention[0], trip.days))
+                        and not _COUNT_UNCERTAIN.search(rest)):
+                    other_count_days.add(int(mention[1]) if mention[1] else aliases[mention[0]])
             continue
-        day = int(match[1]) if match[1] else None
-        count = int(match[2])
+        day = int(match["day"]) if match["day"] else aliases.get(match["alias"])
+        # A return adds no visit. A longer continuation may add more stops, so keep the planner's total for that day.
+        if match["after"] is not None and not _RETURN_ONLY.fullmatch(match["after"]):
+            if day is not None:
+                other_day_clause = True
+                if not _COUNT_UNCERTAIN.search(match["after"]):
+                    other_count_days.add(day)
+            continue
+        count = int(match["count"])
         if (day is not None and day > trip.days) or (day in declared and declared[day] != count):
             raise ValueError("指定日期或地点数量与本次行程冲突，请核对原文，仍有冲突时请澄清。")
         declared[day] = count
