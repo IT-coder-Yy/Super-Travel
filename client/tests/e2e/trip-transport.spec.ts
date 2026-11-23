@@ -120,12 +120,16 @@ test('键盘取消、草稿保存与正式应用保留用户字段，并可重�
 test('交通方式保存冲突后可重试读取，会话更新后继续保存所选方式', async ({ page, localApp }) => {
   const trip = await setup(page, localApp);
   await open(page);
-  await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
+  const choice = page.getByLabel('整程接驳方式', { exact: true });
+  await choice.selectOption('transit');
+  await form(page).getByRole('button', { name: '保存方式到草稿' }).click();
+  await editor(page).getByRole('button', { name: '切换交通方式' }).click();
+  await choice.selectOption('walking');
   const pending = await trip.read();
   await page.route('**/trip/transport', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: { message: '固定离线写入失败，请重试。' } }) }), { times: 1 });
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
   await expect(form(page).getByRole('alert')).toContainText('写入失败');
-  await expect(page.getByLabel('整程接驳方式', { exact: true })).toHaveValue('transit');
+  await expect(choice).toHaveValue('walking');
   expect(await trip.read()).toEqual(pending);
   const newerData = structuredClone(pending.data);
   newerData.draft[0].activities[0].description = '另一个窗口刚保存的备注';
@@ -136,23 +140,31 @@ test('交通方式保存冲突后可重试读取，会话更新后继续保存�
   await page.route('**/api/conversations/' + pending.id, route => route.fulfill({
     status: 503, json: { detail: { message: '固定离线读取失败，请重试。' } },
   }), { times: 1 });
-  const reload = form(page).getByRole('button', { name: '重新读取会话' });
+  const reload = form(page).getByRole('button', { name: '重新读取会话', exact: true });
+  const confirm = form(page).getByRole('button', { name: '确认重新读取会话' });
   await reload.click();
+  await expect(form(page).getByRole('button', { name: '保留本地输入' })).toBeVisible();
+  await form(page).getByRole('button', { name: '保留本地输入' }).click();
+  await expect(choice).toHaveValue('walking');
+  await expect(choice).toBeDisabled();
+  await reload.click();
+  await confirm.click();
   await expect(form(page).getByRole('alert')).toContainText('读取失败');
   expect(await trip.read()).toEqual(newer);
   await reload.click();
+  await confirm.click();
   await expect(editor(page).getByLabel('备注', { exact: true }).first()).toHaveValue('另一个窗口刚保存的备注');
   expect(await trip.read()).toEqual(newer);
   await editor(page).getByRole('button', { name: '切换交通方式' }).click();
-  await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
+  await choice.selectOption('walking');
   const save = page.waitForRequest(request => request.url().endsWith('/trip/transport'));
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
-  expect((await save).postDataJSON()).toEqual({ expected_revision: newer.revision, mode: 'transit' });
+  expect((await save).postDataJSON()).toEqual({ expected_revision: newer.revision, mode: 'walking' });
   await expect(editor(page)).toBeVisible();
   const saved = await trip.read();
   expect(saved.data.draft[0].activities[0]).toEqual(newer.data.draft[0].activities[0]);
   expect(saved.data.days).toEqual(newer.data.days);
-  expect(saved.data.draftTrip.transportMode).toBe('transit');
+  expect(saved.data.draftTrip.transportMode).toBe('walking');
   expect(await trip.calls()).toHaveLength(0);
 });
 
@@ -186,8 +198,12 @@ test('硬时间冲突保留草稿，用户调整后应用；有效零票价不�
   await page.getByLabel('整程接驳方式', { exact: true }).selectOption('transit');
   await page.getByRole('button', { name: '保存方式到草稿' }).click();
   await expect(editor(page)).toBeVisible();
+  await editor(page).getByRole('button', { name: '第 2 天', exact: true }).click();
+  await expect.poll(async () => (await trip.read()).data.selectedDay).toBe(2);
   const pending = await trip.read();
   await page.getByRole('button', { name: '应用修改', exact: true }).click();
+  await expect(editor(page).locator('.editor-activity').nth(1).getByRole('alert')).toContainText('第 1 天');
+  await expect(editor(page).locator('.editor-activity').nth(1)).toHaveAttribute('data-activity-id', pending.data.draft[0].activities[1].id);
   await expect(editor(page).getByRole('alert')).toContainText('75 分钟');
   await expect(editor(page).getByRole('alert')).toBeInViewport();
   await expect(editor(page).getByRole('alert')).toBeFocused();

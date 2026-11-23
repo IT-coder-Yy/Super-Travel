@@ -3,16 +3,21 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
-import json
 import math
 import re
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from supertravel_server.mcp_client import ToolError
-from supertravel_server.trip_routes import MODES, RouteSelectionExpired, query_route, route_contexts, route_fresh, route_matches, unknown_route
+from supertravel_server.search_tools import search_payload
+from supertravel_server.trip_routes import MODES, RouteSelectionExpired, TripLegError, leg_transport_mode, query_route, route_cache_key, route_contexts, route_fresh, route_matches, unknown_route
+
+
+TransportMode = Literal["walking", "driving", "transit"]
+StopCount = Annotated[int, Field(ge=1, le=8)]
+DailyStopCounts = Annotated[list[StopCount | None], Field(min_length=1, max_length=7)]
 
 
 class StrictModel(BaseModel):
@@ -22,9 +27,15 @@ class StrictModel(BaseModel):
 class TripRequest(StrictModel):
     destination: str = Field(min_length=1, max_length=60)
     days: int = Field(ge=1, le=7)
-    stops_per_day: int | None = Field(default=None, ge=1, le=8, description="用户指定每天的地点数；单日行程指定3个地点时必须为3。未指定为null。")
+    stops_per_day: StopCount | DailyStopCounts | None = Field(default=None, description="统一数量填整数；按天指定时按日期顺序填数组，长度等于 days，例如 [3,1]。没有数量要求的天填 null；全程未指定填 null。")
     map_provider: Literal["baidu", "amap"] | None = Field(default=None, description="用户明确只使用百度或高德时分别填baidu或amap，未限定为null。限定时本次仅查询该地图地点。")
-    transport_mode: Literal["walking", "driving", "transit"] = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
+    transport_mode: TransportMode = Field(default="walking", description="活动间交通方式，遵守用户选择；未指定时按步行估算并明确说明。")
+
+    @model_validator(mode="after")
+    def check_daily_counts(self):
+        if isinstance(self.stops_per_day, list) and len(self.stops_per_day) != self.days:
+            raise ValueError("逐日地点数量必须与行程天数一致。")
+        return self
 
 
 class SourceLocation(StrictModel):
@@ -66,7 +77,7 @@ class TaxiEstimate(TransitFare):
 class IncomingRoute(StrictModel):
     fromPlaceId: str = Field(min_length=1, max_length=200)
     toPlaceId: str = Field(min_length=1, max_length=200)
-    mode: Literal["walking", "driving", "transit"]
+    mode: TransportMode
     status: Literal["verified", "unknown"]
     durationMinutes: int | None = Field(default=None, ge=1, le=2880)
     distanceMeters: int | None = Field(default=None, ge=0, le=3000000)
@@ -139,13 +150,19 @@ class TripMeta(StrictModel):
     destination: str = Field(min_length=1, max_length=60)
     summary: str = Field(min_length=1, max_length=800)
     generatedAt: str = Field(min_length=1, max_length=50)
-    transportMode: Literal["walking", "driving", "transit"] | None = None
+    transportMode: TransportMode | None = None
 
     @model_validator(mode="after")
     def timestamp(self):
         if datetime.fromisoformat(self.generatedAt).tzinfo is None:
             raise ValueError("trip timestamp needs a timezone")
         return self
+
+
+class IncomingTransportOverride(StrictModel):
+    day: int = Field(ge=1, le=7)
+    fromActivityId: str = Field(min_length=1, max_length=200)
+    mode: TransportMode
 
 
 class TripActivity(StrictModel):
@@ -158,6 +175,7 @@ class TripActivity(StrictModel):
     y: float = 0
     place: Place
     incomingRoute: IncomingRoute | None = None
+    incomingTransportOverride: IncomingTransportOverride | None = None
     cost: ActivityCost | None = None
 
 
@@ -179,7 +197,10 @@ class TripResult(StrictModel):
         identifiers = set()
         for day in self.days:
             end, places = 0, set()
-            for activity in day.activities:
+            for index, activity in enumerate(day.activities):
+                override = activity.incomingTransportOverride
+                if override and (override.day != day.day or index == 0 or override.fromActivityId != day.activities[index - 1].id):
+                    raise ValueError("单段方式与当前行程日或前序活动不符。")
                 duration = int(re.search(r"\d+", activity.duration)[0])
                 start = int(activity.time[:2]) * 60 + int(activity.time[3:])
                 if not 15 <= duration <= 720 or start < end or start + duration > 1440:
@@ -206,7 +227,7 @@ def validate_result(value: dict) -> dict:
     return result
 
 
-class TripTimingError(ValueError):
+class TripTimingError(TripLegError):
     pass
 
 
@@ -217,14 +238,19 @@ def check_transfers(days, transport_mode=None):
             route = activity.get("incomingRoute")
             if route is not None:
                 if previous is None or not route_matches(route, previous["place"], activity["place"]):
-                    raise TripTimingError("地点顺序已改变，请重新查询相邻活动间的交通。")
-                if transport_mode and route["mode"] != transport_mode:
-                    raise TripTimingError("交通方式已改变，请重新查询相邻活动间的交通。")
-                if route["status"] == "verified" and route_fresh(route):
+                    raise TripTimingError("地点顺序已改变，请重新查询相邻活动间的交通。", activity["id"])
+                mode = leg_transport_mode(activity, transport_mode)
+                if route["mode"] != mode:
+                    # Legacy snapshots may lack a declared mode. Ignore other modes' travel times.
+                    if transport_mode or activity.get("incomingTransportOverride"):
+                        raise TripTimingError("交通方式已改变，请重新查询相邻活动间的交通。", activity["id"])
+                elif route["status"] == "verified" and route_fresh(route):
                     end = int(previous["time"][:2]) * 60 + int(previous["time"][3:]) + int(re.search(r"\d+", previous["duration"])[0])
                     start = int(activity["time"][:2]) * 60 + int(activity["time"][3:])
-                    if start - end < route["durationMinutes"]:
-                        raise TripTimingError(f"第 {day['day']} 天前往{activity['title']}的接驳至少需要 {route['durationMinutes']} 分钟，当前只预留 {start - end} 分钟，请调整时间。")
+                    gap, needed = start - end, route["durationMinutes"]
+                    if gap < needed:
+                        raise TripTimingError(f"第 {day['day']} 天前往{activity['title']}的接驳至少需要 {needed} 分钟，"
+                                             f"当前只预留 {gap} 分钟，还差 {needed - gap} 分钟，请调整时间。", activity["id"])
             previous = activity
 
 
@@ -232,9 +258,12 @@ SEARCH_TOOL = {"name": "search_trip_places", "description": "查询目的地内�
     "type": "object", "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 120},
     "provider": {"type": "string", "enum": ["baidu", "amap"]}}, "required": ["query"], "additionalProperties": False,
 }}
-ROUTE_TOOL = {"name": "query_trip_route", "description": "查询两个已验证地点间的实际路线距离与交通耗时；传地点ID，不传坐标。失败返回unknown。提交行程前应查询每段相邻地点交通；使用用户指定方式。", "inputSchema": {
+ROUTE_TOOL = {"name": "query_trip_route", "description": "查询两个已验证地点间的接驳。编辑已有访问时传目标日期和两端活动 ID，以复用本段指定方式和路线；新路段沿用整程方式。失败返回 unknown，不传坐标。", "inputSchema": {
     "type": "object", "properties": {"from_place_id": {"type": "string", "minLength": 1, "maxLength": 200},
-    "to_place_id": {"type": "string", "minLength": 1, "maxLength": 200}, "mode": {"type": "string", "enum": ["walking", "driving", "transit"]}},
+    "to_place_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "day": {"type": "integer", "minimum": 1, "maximum": 7},
+    "from_activity_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "to_activity_id": {"type": "string", "minLength": 1, "maxLength": 200}, "mode": {"type": "string", "enum": ["walking", "driving", "transit"]}},
     "required": ["from_place_id", "to_place_id"], "additionalProperties": False,
 }}
 SUBMIT_TOOL = {"name": "submit_trip", "description": "完成行程：只能引用 available_places / search_trip_places 的真实 place_id；仅用户明确安排候选时可通过 current_candidates 的 activity_id 引用其真实地点。已有活动须引用 current_trip 的 activity_id；普通调整保留原备注，明确改备注才设置 replace_description=true。首次生成每天有活动，编辑可保留空日，整程至少一项。每天按时间升序且不重叠；未核实信息须注明待确认。", "inputSchema": TripInput.model_json_schema()}
@@ -264,22 +293,10 @@ def to_wgs84(longitude: float, latitude: float, provider: str) -> tuple[float, f
     return round(longitude - dlng, 7), round(latitude - dlat, 7)
 
 
-def _map_payload(result):
-    candidates = [result.get("structuredContent")]
-    for block in result.get("content", []):
-        if isinstance(block, dict) and block.get("type") == "text":
-            try:
-                candidates.append(json.loads(block["text"]))
-            except (ValueError, TypeError, KeyError):
-                continue
-    for candidate in candidates:
-        if isinstance(candidate, dict) and ("results" in candidate or "pois" in candidate):
-            return candidate
-    return {}
-
-
 class TripResearch:
-    def __init__(self, tools, destination: str, existing_days: list | None = None, *, map_provider: str | None = None, existing_candidates: list | None = None):
+    def __init__(self, tools, destination: str, existing_days: list | None = None, *, map_provider: str | None = None,
+                 existing_candidates: list | None = None, default_mode: str = "walking"):
+        self.default_mode = default_mode
         self.tools, self.destination = tools, destination
         self.map_provider = map_provider
         self.places: dict[str, dict] = {}
@@ -291,30 +308,42 @@ class TripResearch:
             from supertravel_server.candidates import Candidate, validate_candidate_snapshot
             validate_candidate_snapshot(existing_days or [], existing_candidates)
             self.candidates = {item["id"]: Candidate.model_validate(item).model_dump(exclude_none=True) for item in existing_candidates}
-        self.routes: dict[tuple[str, str, str], dict] = {}
+        self.routes: dict[str, dict] = {}  # Only evidence queried during this task can serve a new leg.
         self.unavailable: set[str] = set()
-        self.selected_routes = {}
         contexts = route_contexts(existing_days)
         for day in existing_days or []:
             for activity in day.get("activities", []):
                 try:
                     place = Place.model_validate(activity.get("place")).model_dump(exclude_none=True)
-                    if map_provider is None or place["provider"] == map_provider:
-                        self.places[place["id"]] = place
-                        identifier, number = activity.get("id"), day.get("day")
-                        if isinstance(identifier, str) and 1 <= len(identifier.strip()) <= 200 and type(number) is int and 1 <= number <= 7:
-                            previous = {"id": identifier.strip(), "day": number, "place_id": place["id"], "description": activity.get("description")}
-                            if activity.get("cost") is not None:
-                                previous["cost"] = ActivityCost.model_validate(activity["cost"]).model_dump()
-                            self.activities[identifier.strip()] = previous
-                        if activity.get("incomingRoute") is not None:
-                            route = IncomingRoute.model_validate(activity["incomingRoute"]).model_dump(exclude_none=True)
-                            if route.get("selection") == "user" and identifier in contexts:
-                                self.selected_routes[identifier] = (deepcopy(contexts[identifier]), route)
-                            elif route["toPlaceId"] == place["id"] and route["status"] == "verified" and route_fresh(route):
-                                self.routes[route["fromPlaceId"], route["toPlaceId"], route["mode"]] = route
+                    if map_provider and place["provider"] != map_provider:
+                        continue
+                    self.places[place["id"]] = place
+                    identifier, number = activity.get("id"), day.get("day")
+                    if not (isinstance(identifier, str) and 1 <= len(identifier.strip()) <= 200 and type(number) is int and 1 <= number <= 7):
+                        continue
+                    previous = {"id": identifier.strip(), "day": number, "place": place, "description": activity.get("description")}
+                    if activity.get("cost") is not None:
+                        previous["cost"] = ActivityCost.model_validate(activity["cost"]).model_dump()
+                    self.activities[identifier.strip()] = previous
+                    if identifier in contexts:
+                        previous["from_id"] = contexts[identifier][1]
+                        if activity.get("incomingTransportOverride"):
+                            override = IncomingTransportOverride.model_validate(activity["incomingTransportOverride"])
+                            if (override.day, override.fromActivityId) == (number, previous["from_id"]):
+                                previous["incomingTransportOverride"] = override.model_dump()
+                        if activity.get("incomingRoute"):
+                            previous["incomingRoute"] = IncomingRoute.model_validate(activity["incomingRoute"]).model_dump(exclude_none=True)
                 except (ValidationError, TypeError):
                     continue
+
+        # Place-only queries must not guess between visits with different map coordinates.
+        self.ambiguous_places: set[str] = set()
+        known = {}
+        for visit in (*self.activities.values(), *self.candidates.values()):
+            if visit.get("destination", destination).removesuffix("市") == destination.removesuffix("市"):
+                place = visit["place"]
+                if known.setdefault(place["id"], place) != place:
+                    self.ambiguous_places.add(place["id"])
 
     async def search(self, query: str, provider: str | None = None) -> list[dict]:
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 120:
@@ -338,7 +367,7 @@ class TripResearch:
             raise
         if result.get("isError"):
             raise ToolError("tool_result", False, "地图服务未完成地点查询。")
-        payload = _map_payload(result)
+        payload = search_payload(result)
         rows = payload.get("results" if provider == "baidu" else "pois", [])
         found = {}
         for row in rows if isinstance(rows, list) else []:
@@ -365,21 +394,74 @@ class TripResearch:
             found[place["id"]] = place
             if len(found) == 10:
                 break
-        changed = {identifier for identifier, place in found.items() if identifier in self.places and self.places[identifier].get("sourceLocation") != place.get("sourceLocation")}
-        self.routes = {key: route for key, route in self.routes.items() if not changed.intersection(key[:2])}
+        changed = {identifier for identifier, place in found.items() if identifier in self.places and self.places[identifier] != place}
+        self.routes = {key: route for key, route in self.routes.items() if not changed.intersection((route["fromPlaceId"], route["toPlaceId"]))}
         self.places.update(found)
+        self.ambiguous_places.difference_update(found)
         return list(found.values())
 
-    async def route(self, from_place_id: str, to_place_id: str, mode: str = "walking") -> dict:
-        candidate_places = {item["place"]["id"]: item["place"] for item in self.candidates.values()
-                            if item["destination"].removesuffix("市") == self.destination.removesuffix("市")}
-        origin = self.places.get(from_place_id) or candidate_places.get(from_place_id)
-        destination = self.places.get(to_place_id) or candidate_places.get(to_place_id)
+    def _route_place(self, place_id, activity_id):
+        if activity_id is not None:
+            visit = self.activities.get(activity_id) or self.candidates.get(activity_id)
+            if (not visit or visit["place"]["id"] != place_id or
+                    visit.get("destination", self.destination).removesuffix("市") != self.destination.removesuffix("市")):
+                raise ToolError("tool_arguments", False, "活动 ID 必须对应当前行程或同城候选的地点。")
+            return visit["place"]
+        if place_id in self.ambiguous_places:
+            raise ToolError("tool_arguments", False, "同一地点有多条不同的位置记录，请提供活动 ID 以确定本次访问。")
+        return self.places.get(place_id) or next((item["place"] for item in self.candidates.values()
+                   if item["place"]["id"] == place_id and item["destination"].removesuffix("市") == self.destination.removesuffix("市")), None)
+
+    def _saved_leg(self, day, from_id, to_id, origin, destination):
+        previous, target = self.activities.get(from_id), self.activities.get(to_id)
+        if (target and previous and target.get("from_id") == from_id and previous["day"] == target["day"] == day
+                and previous["place"] == origin and target["place"] == destination):
+            return target
+        return {}
+
+    @staticmethod
+    def _saved_route(leg, origin, destination, mode):
+        route = leg.get("incomingRoute")
+        if (not route_matches(route, origin, destination, mode) or
+                route.get("provider") and not (route["provider"] == origin["provider"] == destination["provider"])):
+            return None
+        if route.get("selection") == "user" and not route_fresh(route):
+            raise RouteSelectionExpired(f"第 {leg['day']} 天前往{destination['name']}的用户选用公交方案已过期，请在编辑中重新比较并选择；原草稿仍保留。", leg["id"])
+        return route
+
+    async def route(self, from_place_id: str, to_place_id: str, mode: str | None = None, *,
+                    day: int | None = None, from_activity_id: str | None = None, to_activity_id: str | None = None) -> dict:
+        if day is not None and (from_activity_id is None or to_activity_id is None):
+            matches = [target for target in self.activities.values()
+                       if target["day"] == day and target["place"]["id"] == to_place_id
+                       and to_activity_id in (None, target["id"]) and from_activity_id in (None, target.get("from_id"))
+                       and (previous := self.activities.get(target.get("from_id"))) and previous["place"]["id"] == from_place_id]
+            if len(matches) > 1:
+                raise ToolError("tool_arguments", False, "当日有多段相同地点的接驳，请提供活动 ID 以确定路段。")
+            if matches:
+                from_activity_id, to_activity_id = matches[0]["from_id"], matches[0]["id"]
+        origin = self._route_place(from_place_id, from_activity_id)
+        destination = self._route_place(to_place_id, to_activity_id)
         if self.map_provider and any(place and place["provider"] != self.map_provider for place in (origin, destination)):
             raise ToolError("tool_arguments", False, "地点来源不符合用户指定的地图服务。")
+        if day is None and (from_activity_id is not None or to_activity_id is not None):
+            raise ToolError("tool_arguments", False, "按活动 ID 查询时请同时提供本段的目标行程日。")
+        mode = mode or self.default_mode
         if not origin or not destination or from_place_id == to_place_id or mode not in MODES:
             raise ToolError("tool_arguments", False, "请先查询两个不同的真实地点，并选择有效交通方式。")
-        key = from_place_id, to_place_id, mode
+        leg = self._saved_leg(day, from_activity_id, to_activity_id, origin, destination)
+        if day is not None:
+            mode = leg_transport_mode(leg, self.default_mode)
+        elif from_activity_id is None and to_activity_id is None:
+            # A legacy place-only call may reuse evidence only for an unambiguous visit.
+            matches = [visit for visit in self.activities.values() if visit["place"] == destination and
+                       self.activities.get(visit.get("from_id"), {}).get("place") == origin]
+            if len(matches) == 1 and leg_transport_mode(matches[0], self.default_mode) == mode:
+                leg = matches[0]
+        saved = self._saved_route(leg, origin, destination, mode)
+        if saved and saved["status"] == "verified" and route_fresh(saved):
+            return deepcopy(saved)
+        key = route_cache_key(origin, destination, mode)
         cached = self.routes.get(key)
         if cached and route_fresh(cached):
             return deepcopy(cached)
@@ -401,7 +483,7 @@ class TripResearch:
                 if stop.activity_id is not None:
                     candidate = self.candidates.get(stop.activity_id)
                     previous = candidate or self.activities.get(stop.activity_id)
-                    place_id = candidate["place"]["id"] if candidate else previous.get("place_id") if previous else None
+                    place_id = previous["place"]["id"] if previous else None
                     if not previous or place_id != stop.place_id:
                         raise ValueError("activity_id 必须引用当前行程或候选池中相同地点的已有活动。")
                     if candidate:
@@ -418,7 +500,7 @@ class TripResearch:
             for stop in day.activities:
                 if stop.activity_id is None:
                     same_day = [item for identifier, item in self.activities.items()
-                                if identifier not in claimed and item["day"] == day.day and item["place_id"] == stop.place_id]
+                                if identifier not in claimed and item["day"] == day.day and item["place"]["id"] == stop.place_id]
                     if len(same_day) == 1:
                         stop.activity_id = same_day[0]["id"]
                         claimed.add(stop.activity_id)
@@ -426,16 +508,14 @@ class TripResearch:
         for day in planned.days:
             if not self.editing and not day.activities:
                 raise ValueError("首次生成行程时每天至少需要安排一个活动。")
-            if request.stops_per_day is not None and len(day.activities) != request.stops_per_day:
-                raise ValueError(f"每天必须恰好安排 {request.stops_per_day} 个不同地点，请按用户要求调整。")
+            counts = request.stops_per_day
+            required = counts[day.day - 1] if isinstance(counts, list) else counts
+            if required is not None and len(day.activities) != required:
+                scope = f"第 {day.day} 天" if isinstance(counts, list) else "每天"
+                raise ValueError(f"{scope}必须恰好安排 {required} 个不同地点，请按用户要求调整。")
             end, used, activities = 0, set(), []
             for stop in day.activities:
                 candidate = self.candidates.get(stop.activity_id) if stop.activity_id else None
-                place = candidate["place"] if candidate else self.places.get(stop.place_id)
-                if not place:
-                    raise ValueError("行程引用了未经地图查询验证的地点，请先 search_trip_places。")
-                if request.map_provider and place["provider"] != request.map_provider:
-                    raise ValueError("地点来源不符合用户指定的地图服务。")
                 if stop.place_id in used:
                     raise ValueError("同一天不应重复安排同一个地点。")
                 start = int(stop.time[:2]) * 60 + int(stop.time[3:])
@@ -445,7 +525,7 @@ class TripResearch:
                 end = start + stop.duration_minutes
                 previous = candidate or (self.activities.get(stop.activity_id) if stop.activity_id else None)
                 if stop.activity_id is None:
-                    candidates = [item for identifier, item in self.activities.items() if identifier not in claimed and item["place_id"] == stop.place_id]
+                    candidates = [item for identifier, item in self.activities.items() if identifier not in claimed and item["place"]["id"] == stop.place_id]
                     destinations = sum(item.activity_id is None and item.place_id == stop.place_id for target in planned.days for item in target.activities)
                     if len(candidates) == 1 and destinations == 1:
                         previous = candidates[0]
@@ -453,21 +533,31 @@ class TripResearch:
                         raise ValueError("同一地点对应多个已有活动或多个目标安排，请提供 activity_id 明确要保留哪一项。")
                     if previous:
                         claimed.add(previous["id"])
+                place = previous["place"] if previous else self.places.get(stop.place_id)
+                if not previous and stop.place_id in self.ambiguous_places:
+                    raise ValueError("新访问的地点有多条位置记录，请先用 search_trip_places 确认地点。")
+                if not place:
+                    raise ValueError("行程引用了未经地图查询验证的地点，请先 search_trip_places。")
+                if request.map_provider and place["provider"] != request.map_provider:
+                    raise ValueError("地点来源不符合用户指定的地图服务。")
                 activities.append({"id": previous["id"] if previous else str(uuid4()), "title": place["name"], "time": stop.time,
                     "duration": f"约 {stop.duration_minutes} 分钟", "description": previous["description"] if previous and not stop.replace_description else stop.description,
                     "x": 0, "y": 0, "place": deepcopy(place)})
                 if previous and "cost" in previous:
                     activities[-1]["cost"] = deepcopy(previous["cost"])
                 if len(activities) > 1:
-                    origin = activities[-2]["place"]
-                    route = self.routes.get((origin["id"], place["id"], request.transport_mode))
-                    choice = self.selected_routes.get(activities[-1]["id"])
-                    context = (day.day, activities[-2]["id"], activities[-1]["id"], origin, place)
-                    if choice and choice[0] == context and choice[1]["mode"] == request.transport_mode:
-                        if not route_fresh(choice[1]):
-                            raise RouteSelectionExpired(f"第 {day.day} 天前往{place['name']}的用户选用公交方案已过期，请在编辑中重新比较并选择；原草稿仍保留。")
-                        route = choice[1]
-                    activities[-1]["incomingRoute"] = deepcopy(route) if route and route_fresh(route) else unknown_route(origin, place, request.transport_mode)
+                    source, target = activities[-2:]
+                    origin = source["place"]
+                    leg = self._saved_leg(day.day, source["id"], target["id"], origin, place)
+                    if "incomingTransportOverride" in leg:
+                        target["incomingTransportOverride"] = deepcopy(leg["incomingTransportOverride"])
+                    mode = leg_transport_mode(target, request.transport_mode)
+                    route = self._saved_route(leg, origin, place, mode)
+                    if not (route and route["status"] == "verified" and route_fresh(route)):
+                        cached = self.routes.get(route_cache_key(origin, place, mode))
+                        if cached and route_fresh(cached):
+                            route = cached
+                    target["incomingRoute"] = deepcopy(route) if route else unknown_route(origin, place, mode)
             days.append({"day": day.day, "title": day.title, "subtitle": day.subtitle, "activities": activities})
         result = validate_result({"days": days, "trip": {"destination": request.destination, "summary": planned.summary,
                                       "generatedAt": datetime.now(timezone.utc).isoformat(), "transportMode": request.transport_mode}})

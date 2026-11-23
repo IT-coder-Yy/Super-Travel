@@ -82,6 +82,44 @@ test.describe('双 Agent UI（本地固定假模型/工具，无真实API费用�
     expect(errors).toEqual([]);
   });
 
+  test('旧任务的取消回包晚到时保留新任务', async ({ page, localApp }) => {
+    await configure(page, localApp);
+    await page.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    const first = await send(page, '查询杭州天气，准备取消');
+    const progress = page.getByLabel('Agent 任务进度');
+    await expect.poll(() => localApp.request('/test-fixture/state')).toMatchObject({ pending: 1 });
+
+    const firstRun = (await localApp.request('/conversations/' + first.id)).data.agent.run_id;
+    let deliver!: () => void;
+    const hold = new Promise<void>(resolve => { deliver = resolve; });
+    await page.route('**/cancel', async route => {
+      const response = await route.fetch();
+      await hold;
+      await route.fulfill({ response });
+    });
+    try {
+      await progress.getByRole('button', { name: '取消任务', exact: true }).click();
+      await expect.poll(async () => (await localApp.request('/conversations/' + first.id)).data.agent.status).toBe('cancelled');
+      await localApp.request('/test-fixture/release', 'POST');
+      await expect(progress).toContainText('任务已取消');
+      await send(page, '再次查询杭州天气');
+      await expect(progress).toContainText('执行 Agent 正在查询');
+      const received = page.waitForResponse(response => response.url().endsWith('/cancel'));
+      deliver();
+      const cancelled = await (await received).json();
+      expect(cancelled.data.agent.run_id).toBe(firstRun);
+      // Wait for React to render the delivered response before checking the newer task.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(progress).toContainText('执行 Agent 正在查询');
+      const next = await localApp.request('/conversations/' + first.id);
+      expect(next.data.agent.run_id).not.toBe(firstRun);
+      expect(next.data.agent.status).toBe('running');
+    } finally {
+      deliver();
+      await localApp.request('/test-fixture/release', 'POST');
+    }
+  });
+
   test('后端重启后刷新保留消息、显示中断且不自动续跑', async ({ page, localApp }, info) => {
     await configure(page, localApp);
     await page.getByRole('button', { name: '关闭窗口', exact: true }).click();

@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
+import { setLegMode } from '../fixtures/leg-mode';
 
 test.use({ reducedMotion: 'reduce' });
 
@@ -115,6 +116,40 @@ test('移入候选可留空日，重启恢复草稿，排入失败可重试且�
   expect(saved.data.candidates).toEqual([]);
   expect(JSON.stringify(JSON.parse(await readFile(trip.path, 'utf8')))).not.toContain('fixture-key-not-real');
   expect(errors).toEqual([]);
+});
+
+test('候选插在两站之间，两条新路跟随整程，另一天的指定方式保留', async ({ page, localApp }) => {
+  const trip = await createTrip(page, localApp);
+  await page.getByRole('button', { name: '编辑当天行程', exact: true }).click();
+  const edit = page.getByRole('dialog', { name: '编辑当天行程', exact: true });
+  const rows = edit.locator('.editor-activity');
+  await edit.getByRole('button', { name: '第 2 天', exact: true }).click();
+  await setLegMode(page, rows.nth(1), 'driving');
+  await edit.getByRole('button', { name: '第 1 天', exact: true }).click();
+  await setLegMode(page, rows.nth(1), 'transit');
+  await edit.getByRole('button', { name: '关闭窗口' }).click();
+  await openPool(page);
+  await addGarden(page, '插入后保留的候选备注');
+  const before = await trip.read();
+  const candidate = before.data.draftCandidates[0];
+  await page.locator('#insert-trip-candidate-' + candidate.id).click();
+  await page.getByLabel('目标日期', { exact: true }).selectOption('1');
+  await page.getByLabel('停留时长（分钟）', { exact: true }).fill('15');
+  await page.getByRole('button', { name: '检查可用时段' }).click();
+  await page.getByRole('radio', { name: /固定测试公园之后.*固定测试博物馆之前/ }).check();
+  await page.getByRole('button', { name: '排入草稿' }).click();
+  await expect(page.getByRole('dialog', { name: '候选池', exact: true })).toBeVisible();
+  const after = await trip.read();
+  expect(after.data.days).toEqual(before.data.days);
+  expect(after.data.draft[1]).toEqual(before.data.draft[1]);
+  expect(after.data.draft[0].activities[1]).toMatchObject({ id: candidate.id, description: candidate.description });
+  expect(after.data.draft[0].activities[1]).not.toHaveProperty('incomingTransportOverride');
+  expect(after.data.draft[0].activities[2]).not.toHaveProperty('incomingTransportOverride');
+  expect(after.data.draftCandidates).toEqual([]);
+  await page.getByRole('button', { name: '关闭窗口' }).click();
+  await expect(page.locator('.activities .trip-leg')).toHaveText([/跟随整程（步行）/, /跟随整程（步行）/]);
+  await page.getByRole('tab', { name: '第 2 天', exact: true }).click();
+  await expect(page.locator('.activities .trip-leg')).toContainText('本段指定驾车');
 });
 
 test('只读查看搜索不建草稿，搜索加入与放弃，以及删除候选取消应用恢复同步收藏', async ({ page, localApp }) => {

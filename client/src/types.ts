@@ -10,8 +10,9 @@ export type TransitDetails = { segments: TransitSegment[]; transferCount?: numbe
 export type TaxiEstimate = { amountFen: number; currency: 'CNY'; kind: 'estimate'; label?: string | null; note?: string | null }
 export type TripRoute = { fromPlaceId: string; toPlaceId: string; mode: 'walking' | 'driving' | 'transit'; status: 'verified' | 'unknown'; durationMinutes?: number | null; distanceMeters?: number | null; provider?: 'baidu' | 'amap' | null; queriedAt?: string | null; reason?: string | null; transit?: TransitDetails | null; taxiEstimates?: TaxiEstimate[] | null; selection?: 'user' | null }
 export type TripRouteOptions = { revision: number; options: { option_id: string; route: TripRoute }[]; reason?: string }
-export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
-export type Candidate = Omit<Activity, 'time' | 'x' | 'y' | 'incomingRoute' | 'place'> & { place: Place; destination: string }
+export type IncomingTransportOverride = { day: number; fromActivityId: string; mode: TripRoute['mode'] }
+export type Activity = { id: string; title: string; time: string; duration: string; description: string; x: number; y: number; place?: Place; incomingRoute?: TripRoute | null; incomingTransportOverride?: IncomingTransportOverride | null; cost?: { amountFen: number; currency: 'CNY'; source: 'user' } | null }
+export type Candidate = Omit<Activity, 'time' | 'x' | 'y' | 'incomingRoute' | 'incomingTransportOverride' | 'place'> & { place: Place; destination: string }
 export type CandidatePlaceSelection = Pick<PlaceSelection, 'selection_id' | 'duration_minutes' | 'description'>
 export type CandidateSlot = { option_id: string; earliest_start: string; latest_start: string; position: number; warnings: string[] }
 export type CandidateSlots = { revision: number; options: CandidateSlot[]; reason?: string }
@@ -69,14 +70,22 @@ function validTrip(value: unknown): value is TripMeta {
   return typeof trip.destination === 'string' && typeof trip.summary === 'string' && typeof trip.generatedAt === 'string'
 }
 
+function validLegOverride(activity: Activity, previous: Activity | undefined, day: number): boolean {
+  const override = activity.incomingTransportOverride
+  if (override == null) return true
+  return typeof override === 'object' && Object.keys(override).length === 3 && !!previous?.place && !!activity.place &&
+    override.day === day && override.fromActivityId === previous.id && ['walking', 'driving', 'transit'].includes(override.mode) &&
+    (activity.incomingRoute == null || activity.incomingRoute.mode === override.mode)
+}
+
 function validDays(value: unknown): value is TripDay[] {
   return Array.isArray(value) && value.length <= 7 && value.every(day => day && Number.isInteger(day.day) && day.day >= 1 && day.day <= 7 &&
     typeof day.title === 'string' && typeof day.subtitle === 'string' && Array.isArray(day.activities) &&
-    day.activities.every((activity: Activity) => activity && typeof activity.id === 'string' && typeof activity.title === 'string' &&
+    day.activities.every((activity: Activity, index: number) => activity && typeof activity.id === 'string' && typeof activity.title === 'string' &&
       typeof activity.time === 'string' && typeof activity.duration === 'string' && typeof activity.description === 'string' &&
       Number.isFinite(activity.x) && Number.isFinite(activity.y) && (activity.place === undefined || validPlace(activity.place)) &&
       (activity.cost == null || Number.isSafeInteger(activity.cost.amountFen) && activity.cost.amountFen >= 0 && activity.cost.amountFen <= 100000000 && activity.cost.currency === 'CNY' && activity.cost.source === 'user') &&
-      (activity.incomingRoute == null || validRoute(activity.incomingRoute))))
+      (activity.incomingRoute == null || validRoute(activity.incomingRoute)) && validLegOverride(activity, day.activities[index - 1], day.day)))
 }
 
 function validTransit(value: TransitDetails): boolean {
@@ -109,7 +118,7 @@ function validRoute(route: TripRoute): boolean {
 function validCandidates(value: unknown): value is Candidate[] {
   return Array.isArray(value) && value.every(candidate => candidate && typeof candidate.id === 'string' &&
     typeof candidate.title === 'string' && typeof candidate.duration === 'string' && typeof candidate.description === 'string' && typeof candidate.destination === 'string' && validPlace(candidate.place) &&
-    candidate.time === undefined && candidate.x === undefined && candidate.y === undefined && candidate.incomingRoute === undefined &&
+    candidate.time === undefined && candidate.x === undefined && candidate.y === undefined && candidate.incomingRoute === undefined && candidate.incomingTransportOverride === undefined &&
     (candidate.cost == null || Number.isSafeInteger(candidate.cost.amountFen) && candidate.cost.amountFen >= 0 && candidate.cost.amountFen <= 100000000 && candidate.cost.currency === 'CNY' && candidate.cost.source === 'user'))
 }
 

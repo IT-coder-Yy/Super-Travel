@@ -195,7 +195,10 @@
 .transport-action .dialog-actions{gap:12px;flex-wrap:wrap}
 @media(max-width:520px){.editor-transport{align-items:flex-start;flex-wrap:wrap}.transport-impact ul{max-height:140px}}
 
-.trip-leg .route-compare-trigger{align-self:flex-start;margin-top:8px;min-height:36px}
+.trip-leg-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 5px; }
+.trip-leg-actions .text-button { min-height: 36px; color: var(--blue); }
+.transport-impact summary { cursor: pointer; color: var(--blue); margin-top: 8px; }
+.transport-action .route-comparison-leg { margin-bottom: 14px; }
 .route-comparison-leg{font-size:14px;font-weight:600;line-height:1.7;overflow-wrap:anywhere}
 .route-comparison-scroll>.secondary-button{margin-top:12px}
 .route-options{margin-top:24px;min-width:0}

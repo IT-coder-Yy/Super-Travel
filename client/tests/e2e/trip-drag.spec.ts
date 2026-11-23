@@ -1,8 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import type { WorkspaceData } from '../../src/types';
+import { isWorkspaceData, type Conversation, type WorkspaceData } from '../../src/types';
 import { test, expect, type LocalApp } from '../fixtures/local-app';
+import { setLegMode } from '../fixtures/leg-mode';
 
 test.use({ reducedMotion: 'reduce' });
 
@@ -121,6 +122,101 @@ test('末项拖到首位后可取消，键盘手柄和原有上下移按钮仍�
   await expect(page.getByRole('button', { name: '下移固定测试花园', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: '下移固定测试花园', exact: true }).press('Enter');
   await expect(page.locator('[data-activity-id]').nth(1)).toHaveAttribute('data-activity-id', 'drag-third');
+  await page.getByRole('button', { name: '放弃修改', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect((await trip.read()).data.days).toEqual(trip.formal.data.days);
+});
+
+test('混合草稿拖拽和键盘换序只清断开的接驳，另一天的同地点选择保留', async ({ page, localApp }) => {
+  const trip = await setup(page, localApp, data => {
+    data.trip!.transportMode = 'walking';
+    const first = data.days[0].activities;
+    for (const [index, stop] of data.days[1].activities.entries()) {
+      stop.place = structuredClone(first[index].place);
+      stop.title = first[index].title;
+      delete stop.incomingRoute;
+    }
+  });
+  await expect.poll(async () => (await trip.read()).data.draft).not.toBeNull();
+  const edit = page.getByRole('dialog', { name: '编辑当天行程', exact: true });
+  await localApp.request('/test-fixture/routes', 'POST', { profile: 'options' });
+  try {
+    for (const number of [2, 1]) {
+      await edit.getByRole('button', { name: `第 ${number} 天`, exact: true }).click();
+      const row = edit.locator('.editor-activity').nth(1);
+      await setLegMode(page, row, 'transit');
+      await row.getByRole('button', { name: '比较公交方案' }).click();
+      const form = page.getByRole('dialog', { name: '比较公交方案', exact: true });
+      await form.getByRole('button', { name: '查询公交方案' }).click();
+      await form.getByRole('radio', { name: new RegExp('方案 ' + (number + 1)) }).check();
+      await form.getByRole('button', { name: '保存方案到草稿' }).click();
+      await expect(row.getByRole('button', { name: '比较公交方案' })).toBeFocused();
+    }
+    expect((await localApp.request('/test-fixture/state')).route_calls).toHaveLength(2);
+  } finally {
+    await localApp.request('/test-fixture/routes', 'POST', { profile: null });
+  }
+  const mixed: Conversation = await trip.read();
+  expect(isWorkspaceData(mixed.data)).toBe(true);
+  for (const key of ['days', 'draft', 'previousTrip'] as const) {
+    const data = structuredClone(mixed.data);
+    const days = structuredClone(mixed.data.draft!);
+    days[0].activities[1].incomingTransportOverride!.fromActivityId = days[1].activities[0].id;
+    if (key === 'previousTrip') data.previousTrip = { days, trip: data.trip! };
+    else data[key] = days;
+    expect(isWorkspaceData(data)).toBe(false);
+  }
+  const leaked = structuredClone(mixed.data);
+  Object.assign(leaked.draftCandidates![0], { incomingTransportOverride: null });
+  expect(isWorkspaceData(leaked)).toBe(false);
+
+  await page.reload();
+  await page.getByRole('button', { name: '继续编辑草稿', exact: true }).click();
+  const compare = edit.getByRole('button', { name: '比较公交方案', exact: true });
+  await expect(edit).toContainText('公共交通约 20 分钟');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await compare.press('Enter');
+  await expect(page.getByRole('button', { name: '查询公交方案', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(compare).toBeFocused();
+  expect(await trip.read()).toEqual(mixed);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await dragTo(page, 2, 0, true);
+  await page.keyboard.press('Escape');
+  const handle = page.locator('#drag-trip-activity-drag-third');
+  await expect(handle).toBeFocused();
+  expect(await trip.read()).toEqual(mixed);
+  await dragTo(page, 2, 0, true);
+  await page.setViewportSize({ width: 960, height: 640 });
+  await expect(page.getByLabel('插入位置', { exact: true })).toHaveValue('0');
+  await page.getByLabel('移动后开始时间').fill('07:00');
+  await page.getByRole('button', { name: '移动到草稿', exact: true }).press('Enter');
+  await expect(handle).toBeFocused();
+  const shifted = await trip.read();
+  expect(shifted.data.draft[0].activities[2]).toEqual(mixed.data.draft![0].activities[1]);
+  await expect(compare).toHaveCount(1);
+
+  await edit.getByRole('button', { name: '下移固定测试花园', exact: true }).press('Enter');
+  await expect(compare).toHaveCount(0);
+  // Reconnect the same stops before the editor's debounced autosave runs.
+  await edit.getByRole('button', { name: '上移固定测试花园', exact: true }).press('Enter');
+  const expected = structuredClone(shifted.data);
+  delete expected.draft[0].activities[2].incomingRoute;
+  delete expected.draft[0].activities[2].incomingTransportOverride;
+  await expect.poll(async () => (await trip.read()).data).toEqual(expected);
+
+  await dragToDate(page, 0, 2);
+  await page.getByLabel('插入位置', { exact: true }).selectOption('2');
+  await page.getByLabel('移动后开始时间').fill('16:00');
+  await page.getByRole('button', { name: '移动到草稿', exact: true }).press('Enter');
+  await expect(handle).toBeFocused();
+  const moved = expected.draft[0].activities.shift();
+  expected.draft[1].activities.push({ ...moved, time: '16:00' });
+  expected.selectedDay = 2;
+  expect((await trip.read()).data).toEqual(expected);
+  await expect(edit).toContainText('公共交通约 30 分钟');
   await page.getByRole('button', { name: '放弃修改', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect((await trip.read()).data.days).toEqual(trip.formal.data.days);
@@ -260,7 +356,8 @@ async function hoverDate(page: Page, from: number, targetDay: number) {
   // Edge scrolling can move the date while the pointer travels toward it.
   // Track its current position, as a user does, instead of reusing stale coordinates.
   await expect.poll(async () => {
-    await tab.scrollIntoViewIfNeeded();
+    // At narrow heights the sticky dialog heading can cover a tab at the viewport edge.
+    await tab.evaluate(element => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
     const box = (await tab.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 2 });
     return tab.getAttribute('class');

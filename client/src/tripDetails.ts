@@ -9,10 +9,16 @@ export const transportModes = { walking: '步行', driving: '驾车', transit: '
 const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
 export const formatCost = (amountFen: number) => `¥${(amountFen / 100).toFixed(2)}`
 
-export function routeDetails(previous: Activity | undefined, activity: Activity, mode?: TripRoute['mode']) {
+export function legTransportMode(activity: Activity, defaultMode?: TripRoute['mode'] | null) {
+  return activity.incomingTransportOverride?.mode ?? defaultMode ?? 'walking'
+}
+
+export function routeDetails(previous: Activity | undefined, activity: Activity, defaultMode?: TripRoute['mode']) {
   if (!previous) return null
   const route = activity.incomingRoute
-  if (!route || route.fromPlaceId !== previous.place?.id || route.toPlaceId !== activity.place?.id || mode && route.mode !== mode) {
+  if (!previous.place || !activity.place) return { text: '接驳耗时待查询', conflict: '', detail: '请先定位这段接驳的两个地点。' }
+  if (!route || route.fromPlaceId !== previous.place.id || route.toPlaceId !== activity.place.id || route.mode !== legTransportMode(activity, defaultMode)
+      || (route.provider && (route.provider !== previous.place.provider || route.provider !== activity.place.provider))) {
     return { text: '接驳耗时待查询', conflict: '', detail: '应用修改时查询；也可请旅伴重新规划。' }
   }
   if (route.status !== 'verified' || route.durationMinutes == null) {
@@ -33,14 +39,35 @@ export function routeDetails(previous: Activity | undefined, activity: Activity,
     conflict, detail: `${route.provider === 'baidu' ? '百度地图' : route.provider === 'amap' ? '高德地图' : '地图查询'}${queried ? ` · ${queried}` : ''}；耗时为查询估计。` }
 }
 
+export function firstRouteConflict(days: TripDay[], mode?: TripRoute['mode']) {
+  for (const day of days) {
+    for (const [index, activity] of day.activities.entries()) {
+      const message = routeDetails(day.activities[index - 1], activity, mode)?.conflict
+      if (message) return { activityId: activity.id, message: `第 ${day.day} 天 · 前往${activity.title}：${message}` }
+    }
+  }
+}
+
 export function clearInvalidRoutes(days: TripDay[], previousDays?: TripDay[]) {
-  const context = (day: TripDay, index: number) => JSON.stringify([day.day, day.activities[index - 1]?.id, day.activities[index - 1]?.place, day.activities[index]?.place])
+  // Compare the full stored places independently of JSON property order.
+  const placeFields = ['id', 'name', 'address', 'latitude', 'longitude', 'coordinateSystem', 'provider', 'sourceLocation']
+  const context = (day: TripDay, index: number) => {
+    const previous = day.activities[index - 1]
+    return JSON.stringify([day.day, previous?.id, previous?.place, day.activities[index].place], placeFields)
+  }
+  let lostChoice = false
   const before = new Map(previousDays?.flatMap(day => day.activities.map((activity, index) => [activity.id, context(day, index)])))
   for (const day of days) day.activities.forEach((activity, index) => {
-    const route = activity.incomingRoute
-    if (route && (route.fromPlaceId !== day.activities[index - 1]?.place?.id || route.toPlaceId !== activity.place?.id ||
-      route.selection === 'user' && previousDays && before.get(activity.id) !== context(day, index))) delete activity.incomingRoute
+    const origin = day.activities[index - 1]?.place
+    if (!origin || !activity.place || (previousDays && before.get(activity.id) !== context(day, index))) {
+      if (activity.incomingTransportOverride || activity.incomingRoute?.selection === 'user') lostChoice = true
+      delete activity.incomingTransportOverride
+      delete activity.incomingRoute
+    } else if (activity.incomingRoute && (activity.incomingRoute.fromPlaceId !== origin.id || activity.incomingRoute.toPlaceId !== activity.place.id)) {
+      delete activity.incomingRoute
+    }
   })
+  return lostChoice
 }
 
 export function knownCosts(days: TripDay[]) {

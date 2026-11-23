@@ -30,6 +30,11 @@ def unknown_route(origin, destination, mode="walking", reason="尚未查询交�
             "status": "unknown", "reason": reason}
 
 
+def leg_transport_mode(activity, default_mode):
+    override = activity.get("incomingTransportOverride")
+    return override["mode"] if override else (default_mode or "walking")
+
+
 def route_matches(route, origin, destination, mode=None):
     return isinstance(route, dict) and route.get("fromPlaceId") == origin.get("id") and route.get("toPlaceId") == destination.get("id") and (mode is None or route.get("mode") == mode)
 
@@ -44,8 +49,26 @@ def _payloads(result):
                 continue
 
 
-class RouteSelectionExpired(ValueError):
+class TripLegError(ValueError):
+    def __init__(self, message: str, activity_id: str):
+        super().__init__(message)
+        self.activity_id = activity_id
+
+
+class RouteSelectionExpired(TripLegError):
     pass
+
+
+def check_selected_routes_fresh(days, default_mode):
+    for day in days:
+        for activity in day["activities"]:
+            route = activity.get("incomingRoute") or {}
+            if route.get("selection") == "user" and route["mode"] == leg_transport_mode(activity, default_mode) and not route_fresh(route):
+                raise RouteSelectionExpired(f"第 {day['day']} 天前往{activity['title']}的用户选用公交方案已过期，请重新比较并选择；原草稿仍保留。", activity["id"])
+
+
+def route_cache_key(origin, destination, mode):
+    return json.dumps((origin, destination, mode), sort_keys=True, ensure_ascii=False)
 
 
 def route_contexts(days):
